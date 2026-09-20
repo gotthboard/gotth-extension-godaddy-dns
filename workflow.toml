@@ -1,0 +1,17 @@
+schema_version = 1
+profile = "strict"
+active_feature = "foundation"
+
+[[root_features]]
+id = "foundation"
+title = "Bounded GoDaddy DNS provider 1.0 release line"
+state = "in_progress"
+prd = "docs/prd.md"
+architecture = "docs/architecture.md"
+implementation_spec = "docs/implementation-spec.md"
+path = "workflow/features/foundation"
+source_path = "."
+branch = "workflow/feature/foundation"
+worktree = "/tank/development/linus/gotth-extension-godaddy-dns"
+dependencies = ["gotth-extensions@3822dd722bc8606b8843d0a68c7c3e9f598d9ccc"]
+required_verification = ["git diff --check", "go test ./...", "go test -race ./...", "go vet ./...", "go build ./...", "fake GoDaddy conformance", "reproducible artifact", "two cold reviews"]
