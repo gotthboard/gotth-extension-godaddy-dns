@@ -11,3 +11,6 @@
   and required two identical bounded pagination walks for exact snapshots.
 - Excluded PTR and every registrar, nameserver, forwarding, DNSSEC, domain
   lifecycle, generic HTTP, shell, plugin, and live-DNS path.
+- Implemented and admitted the fixed GoDaddy v3 DNS record client, DNSRecords
+  gRPC seam, authenticated process runtime, exact reconciliation, deterministic
+  artifact, and fake-provider conformance at `b313b413dc9e`.
