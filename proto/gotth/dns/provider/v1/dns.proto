@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package gotth.dns.provider.v1;
+
+option go_package = "github.com/gotthboard/gotth-extension-godaddy-dns/proto/gotth/dns/provider/v1;dnsv1";
+
+service DNSRecords {
+  rpc ObserveZone(ObserveZoneRequest) returns (ObserveZoneResponse);
+  rpc CreateRecord(CreateRecordRequest) returns (MutationResponse);
+  rpc ReplaceRecord(ReplaceRecordRequest) returns (MutationResponse);
+  rpc DeleteRecord(DeleteRecordRequest) returns (MutationResponse);
+}
+
+enum RecordType {
+  RECORD_TYPE_UNSPECIFIED = 0;
+  RECORD_TYPE_A = 1;
+  RECORD_TYPE_AAAA = 2;
+  RECORD_TYPE_CNAME = 3;
+  RECORD_TYPE_MX = 4;
+  RECORD_TYPE_TXT = 5;
+  RECORD_TYPE_NS = 6;
+  RECORD_TYPE_SRV = 7;
+  RECORD_TYPE_SOA = 8;
+  RECORD_TYPE_CAA = 9;
+}
+
+message Record {
+  string record_id = 1;
+  string name = 2;
+  RecordType type = 3;
+  string data = 4;
+  uint32 ttl = 5;
+  optional uint32 priority = 6;
+  string service = 7;
+  string protocol = 8;
+  optional uint32 weight = 9;
+  optional uint32 port = 10;
+  optional uint32 flag = 11;
+  string tag = 12;
+}
+
+message Snapshot {
+  string zone = 1;
+  string sha256 = 2;
+  repeated Record records = 3;
+}
+
+message ObserveZoneRequest { string correlation_id = 1; string zone = 2; }
+message ObserveZoneResponse { Snapshot snapshot = 1; }
+
+message CreateRecordRequest {
+  string correlation_id = 1;
+  string operation_id = 2;
+  string zone = 3;
+  string expected_snapshot_sha256 = 4;
+  uint32 expected_logical_count = 5;
+  Record desired = 6;
+}
+
+message ReplaceRecordRequest {
+  string correlation_id = 1;
+  string operation_id = 2;
+  string zone = 3;
+  string expected_snapshot_sha256 = 4;
+  string record_id = 5;
+  string expected_record_sha256 = 6;
+  Record desired = 7;
+}
+
+message DeleteRecordRequest {
+  string correlation_id = 1;
+  string operation_id = 2;
+  string zone = 3;
+  string expected_snapshot_sha256 = 4;
+  string record_id = 5;
+  string expected_record_sha256 = 6;
+}
+
+enum MutationOutcome {
+  MUTATION_OUTCOME_UNSPECIFIED = 0;
+  MUTATION_OUTCOME_APPLIED = 1;
+  MUTATION_OUTCOME_NOT_APPLIED = 2;
+  MUTATION_OUTCOME_UNKNOWN = 3;
+}
+
+enum MutationReason {
+  MUTATION_REASON_UNSPECIFIED = 0;
+  MUTATION_REASON_RECONCILED = 1;
+  MUTATION_REASON_PROVIDER_REJECTED = 2;
+  MUTATION_REASON_PROVIDER_UNAVAILABLE = 3;
+  MUTATION_REASON_CONCURRENT_CHANGE = 4;
+  MUTATION_REASON_OBSERVATION_FAILED = 5;
+}
+
+message MutationResponse {
+  MutationOutcome outcome = 1;
+  MutationReason reason = 2;
+  string before_snapshot_sha256 = 3;
+  string after_snapshot_sha256 = 4;
+  string affected_record_id = 5;
+  Record previous_record = 6;
+  Record resulting_record = 7;
+}

@@ -1,0 +1,328 @@
+package godaddydns
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+	"testing"
+	"time"
+
+	dnsv1 "github.com/gotthboard/gotth-extension-godaddy-dns/proto/gotth/dns/provider/v1"
+	extensionsv1 "github.com/gotthboard/gotth-extension-godaddy-dns/proto/gotth/extensions/v1"
+	extensioncore "github.com/gotthboard/gotth-extensions/pkg/extensions"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+)
+
+const testToken = "12345678901234567890123456789012"
+
+func authContext() (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	return metadata.NewIncomingContext(ctx, metadata.Pairs("x-gotth-service-token", testToken)), cancel
+}
+
+func baseService(client *providerClient, capabilities ...string) *Service {
+	return &Service{config: Config{Schema: ConfigSchema, Environment: "ote", Zones: []string{"example.com"}, RecordTypes: []string{"A", "MX", "TXT"}, TimeoutSeconds: 1}, binding: Binding{Capabilities: capabilities, ManifestSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", GrantSHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", SessionSHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}, token: testToken, version: "dev", client: client}
+}
+
+func TestAuthorizeRequiresDeadlineTokenAndGrant(t *testing.T) {
+	s := baseService(nil, "dns.records.observe")
+	if err := s.authorize(context.Background(), "11111111-1111-1111-1111-111111111111", "dns.records.observe"); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("missing deadline: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := s.authorize(ctx, "11111111-1111-1111-1111-111111111111", "dns.records.observe"); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("missing token: %v", err)
+	}
+	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("x-gotth-service-token", testToken))
+	if err := s.authorize(ctx, "11111111-1111-1111-1111-111111111111", "dns.records.delete"); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("missing capability: %v", err)
+	}
+	if err := s.authorize(ctx, "11111111-1111-1111-1111-111111111111", "dns.records.observe"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCreateRecordEndToEndAgainstFakeProvider(t *testing.T) {
+	var mu sync.Mutex
+	records := []apiRecord{{RecordID: "existing", Name: "@", Type: "A", Data: "192.0.2.1", TTL: 600}}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.Method {
+		case http.MethodGet:
+			writePage(t, w, append([]apiRecord(nil), records...), len(records), 1)
+		case http.MethodPost:
+			if r.Header.Get("X-Request-Id") != "22222222-2222-2222-2222-222222222222" {
+				t.Errorf("mutation operation ID not propagated: %q", r.Header.Get("X-Request-Id"))
+			}
+			var got apiRecord
+			if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+				t.Errorf("decode create: %v", err)
+			}
+			got.RecordID = "created"
+			records = append(records, got)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(got)
+		default:
+			t.Errorf("unexpected method %s", r.Method)
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+	defer server.Close()
+	client := testClient(server)
+	before := snap(t, records...)
+	s := baseService(client, "dns.records.create")
+	ctx, cancel := authContext()
+	defer cancel()
+	response, err := s.CreateRecord(ctx, &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, ExpectedLogicalCount: 0, Desired: &dnsv1.Record{Name: "mail", Type: dnsv1.RecordType_RECORD_TYPE_A, Data: "192.0.2.2", Ttl: 600}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.GetOutcome() != dnsv1.MutationOutcome_MUTATION_OUTCOME_APPLIED || response.GetAffectedRecordId() != "created" || response.GetBeforeSnapshotSha256() != before.Digest || response.GetAfterSnapshotSha256() == before.Digest {
+		t.Fatalf("unexpected response: %+v", response)
+	}
+}
+
+func TestServiceRejectsStaleAndNoopMutations(t *testing.T) {
+	records := []apiRecord{{RecordID: "existing", Name: "@", Type: "A", Data: "192.0.2.1", TTL: 600}}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { writePage(t, w, records, 1, 1) }))
+	defer server.Close()
+	s := baseService(testClient(server), "dns.records.replace")
+	ctx, cancel := authContext()
+	defer cancel()
+	before := snap(t, records...)
+	request := &dnsv1.ReplaceRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, RecordId: "existing", ExpectedRecordSha256: recordDigest(records[0]), Desired: &dnsv1.Record{Name: "@", Type: dnsv1.RecordType_RECORD_TYPE_A, Data: "192.0.2.1", Ttl: 600}}
+	if _, err := s.ReplaceRecord(ctx, request); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("no-op replacement: %v", err)
+	}
+	request.ExpectedSnapshotSha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	request.Desired.Data = "192.0.2.2"
+	if _, err := s.ReplaceRecord(ctx, request); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("stale replacement: %v", err)
+	}
+}
+
+func TestManifestIsBounded(t *testing.T) {
+	m, err := Manifest("1.0.0-alpha.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.ID != ExtensionID || len(m.Interfaces) != 1 || len(m.Secrets) != 1 || len(m.Capabilities) != len(capabilities) {
+		t.Fatalf("unexpected manifest: %+v", m)
+	}
+	if _, err := Manifest("1.0.0-alpha.0"); err == nil {
+		t.Fatal("invalid version accepted")
+	}
+}
+
+func TestFoundationNegotiation(t *testing.T) {
+	manifest, err := Manifest("1.0.0-alpha.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := extensioncore.ManifestDigest(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := extensioncore.Grant{Schema: extensioncore.GrantSchema, InstanceID: "11111111-1111-1111-1111-111111111111", ExtensionID: ExtensionID, ManifestDigest: digest, Capabilities: []string{"dns.records.observe"}, Interfaces: []extensioncore.InterfaceGrant{{Name: Interface, Major: 1, Minor: 0}}, Secrets: []string{SecretSlot}}
+	host := extensioncore.HostProfile{Protocols: []extensioncore.VersionRange{{Name: extensioncore.ControlName, Major: 1, MinMinor: 0, MaxMinor: 0}}, Interfaces: []extensioncore.VersionRange{{Name: Interface, Major: 1, MinMinor: 0, MaxMinor: 0}}}
+	session, err := extensioncore.Negotiate(manifest, grant, host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(session.Capabilities) != 1 || session.Capabilities[0] != "dns.records.observe" || session.Fingerprint == "" {
+		t.Fatalf("negotiation: %+v", session)
+	}
+}
+
+func TestControlHandshakeHealthAndNewService(t *testing.T) {
+	runtime := RuntimeConfig{Config: Config{Schema: ConfigSchema, Environment: "ote", Zones: []string{"example.com"}, RecordTypes: []string{"A"}, TimeoutSeconds: 1}, Binding: Binding{ManifestSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", GrantSHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", SessionSHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", Capabilities: []string{"dns.records.observe"}}, ServiceToken: testToken, PAT: []byte("0123456789abcdef0123456789abcdef"), Version: "dev"}
+	s, err := NewService(runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx, cancel := authContext()
+	defer cancel()
+	handshake, err := s.Handshake(ctx, &extensionsv1.HandshakeRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", Challenge: make([]byte, 32), ExpectedExtensionId: ExtensionID, ExpectedManifestSha256: runtime.Binding.ManifestSHA256, ExpectedGrantSha256: runtime.Binding.GrantSHA256, ExpectedSessionSha256: runtime.Binding.SessionSHA256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(handshake.GetCapabilities()) != 1 || handshake.GetCapabilities()[0] != "dns.records.observe" {
+		t.Fatalf("grant not reflected: %+v", handshake)
+	}
+	health, err := s.Health(ctx, &extensionsv1.HealthRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", SessionSha256: runtime.Binding.SessionSHA256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.GetState() != extensionsv1.HealthState_HEALTH_STATE_READY {
+		t.Fatalf("health: %+v", health)
+	}
+	if _, err := s.Health(ctx, &extensionsv1.HealthRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", SessionSha256: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("session mismatch accepted: %v", err)
+	}
+}
+
+func TestObserveReplaceDeleteEndToEnd(t *testing.T) {
+	var mu sync.Mutex
+	records := []apiRecord{{RecordID: "target", Name: "@", Type: "A", Data: "192.0.2.1", TTL: 600}, {RecordID: "keep", Name: "txt", Type: "TXT", Data: "keep", TTL: 600}}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.Method {
+		case http.MethodGet:
+			writePage(t, w, append([]apiRecord(nil), records...), len(records), 1)
+		case http.MethodPut:
+			var got apiRecord
+			if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+				t.Errorf("decode replacement: %v", err)
+			}
+			got.RecordID = "target"
+			records[0] = got
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(got)
+		case http.MethodDelete:
+			records = records[1:]
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected method %s", r.Method)
+		}
+	}))
+	defer server.Close()
+	s := baseService(testClient(server), "dns.records.delete", "dns.records.observe", "dns.records.replace")
+	ctx, cancel := authContext()
+	defer cancel()
+	observed, err := s.ObserveZone(ctx, &dnsv1.ObserveZoneRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", Zone: "example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(observed.GetSnapshot().GetRecords()) != 2 {
+		t.Fatalf("observation: %+v", observed)
+	}
+	before := snap(t, records...)
+	previous := records[0]
+	replaced, err := s.ReplaceRecord(ctx, &dnsv1.ReplaceRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, RecordId: "target", ExpectedRecordSha256: recordDigest(previous), Desired: &dnsv1.Record{Name: "@", Type: dnsv1.RecordType_RECORD_TYPE_A, Data: "192.0.2.9", Ttl: 600}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replaced.GetOutcome() != dnsv1.MutationOutcome_MUTATION_OUTCOME_APPLIED {
+		t.Fatalf("replacement: %+v", replaced)
+	}
+	mu.Lock()
+	afterReplaceRecords := append([]apiRecord(nil), records...)
+	mu.Unlock()
+	afterReplace := snap(t, afterReplaceRecords...)
+	current, _ := findRecord(afterReplace, "target")
+	deleted, err := s.DeleteRecord(ctx, &dnsv1.DeleteRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "33333333-3333-3333-3333-333333333333", Zone: "example.com", ExpectedSnapshotSha256: afterReplace.Digest, RecordId: "target", ExpectedRecordSha256: recordDigest(current)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted.GetOutcome() != dnsv1.MutationOutcome_MUTATION_OUTCOME_APPLIED || deleted.GetPreviousRecord().GetData() != "192.0.2.9" {
+		t.Fatalf("deletion: %+v", deleted)
+	}
+}
+
+func TestConcurrentMutationsAreSerialized(t *testing.T) {
+	var mu sync.Mutex
+	posts := 0
+	records := []apiRecord{{RecordID: "existing", Name: "@", Type: "A", Data: "192.0.2.1", TTL: 600}}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if r.Method == http.MethodGet {
+			writePage(t, w, append([]apiRecord(nil), records...), len(records), 1)
+			return
+		}
+		if r.Method == http.MethodPost {
+			posts++
+			var got apiRecord
+			if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+				t.Errorf("decode create: %v", err)
+			}
+			got.RecordID = "created"
+			records = append(records, got)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(got)
+			return
+		}
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}))
+	defer server.Close()
+	s := baseService(testClient(server), "dns.records.create")
+	before := snap(t, records...)
+	type result struct {
+		response *dnsv1.MutationResponse
+		err      error
+	}
+	results := make(chan result, 2)
+	for i, data := range []string{"192.0.2.2", "192.0.2.3"} {
+		go func(i int, data string) {
+			ctx, cancel := authContext()
+			defer cancel()
+			op := "22222222-2222-2222-2222-222222222222"
+			if i == 1 {
+				op = "33333333-3333-3333-3333-333333333333"
+			}
+			response, err := s.CreateRecord(ctx, &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: op, Zone: "example.com", ExpectedSnapshotSha256: before.Digest, ExpectedLogicalCount: 0, Desired: &dnsv1.Record{Name: "mail", Type: dnsv1.RecordType_RECORD_TYPE_A, Data: data, Ttl: 600}})
+			results <- result{response, err}
+		}(i, data)
+	}
+	applied, stale := 0, 0
+	for i := 0; i < 2; i++ {
+		got := <-results
+		if got.err == nil && got.response.GetOutcome() == dnsv1.MutationOutcome_MUTATION_OUTCOME_APPLIED {
+			applied++
+		} else if status.Code(got.err) == codes.FailedPrecondition {
+			stale++
+		} else {
+			t.Fatalf("unexpected concurrent result: response=%+v err=%v", got.response, got.err)
+		}
+	}
+	mu.Lock()
+	gotPosts := posts
+	mu.Unlock()
+	if applied != 1 || stale != 1 || gotPosts != 1 {
+		t.Fatalf("serialization failed: applied=%d stale=%d posts=%d", applied, stale, gotPosts)
+	}
+}
+
+func TestLostMutationResponseReconcilesApplied(t *testing.T) {
+	var mu sync.Mutex
+	records := []apiRecord{{RecordID: "existing", Name: "@", Type: "A", Data: "192.0.2.1", TTL: 600}}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if r.Method == http.MethodGet {
+			writePage(t, w, append([]apiRecord(nil), records...), len(records), 1)
+			return
+		}
+		if r.Method == http.MethodPost {
+			var got apiRecord
+			if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+				t.Errorf("decode create: %v", err)
+			}
+			got.RecordID = "created-after-loss"
+			records = append(records, got)
+			panic(http.ErrAbortHandler)
+		}
+	}))
+	defer server.Close()
+	s := baseService(testClient(server), "dns.records.create")
+	before := snap(t, records...)
+	ctx, cancel := authContext()
+	defer cancel()
+	response, err := s.CreateRecord(ctx, &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, ExpectedLogicalCount: 0, Desired: &dnsv1.Record{Name: "mail", Type: dnsv1.RecordType_RECORD_TYPE_A, Data: "192.0.2.2", Ttl: 600}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.GetOutcome() != dnsv1.MutationOutcome_MUTATION_OUTCOME_APPLIED || response.GetReason() != dnsv1.MutationReason_MUTATION_REASON_RECONCILED || response.GetAffectedRecordId() != "created-after-loss" {
+		t.Fatalf("lost response was not reconciled: %+v", response)
+	}
+}

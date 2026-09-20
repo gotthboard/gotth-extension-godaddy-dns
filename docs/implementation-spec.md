@@ -6,15 +6,23 @@ The executable requires paths, never secret values:
 
 - `GOTTH_EXTENSION_CONFIG_FILE`: private canonical JSON configuration;
 - `GOTTH_EXTENSION_BINDING_FILE`: exact instance, manifest, grant, and session
-  digests;
+  digests plus the canonical granted-capability subset;
 - `GOTTH_EXTENSION_SERVICE_TOKEN_FILE`: local RPC bearer token;
 - `GOTTH_EXTENSION_SECRET_DIR/godaddy.pat`: GoDaddy Bearer PAT;
 - `GOTTH_EXTENSION_SOCKET`: absent socket below a private runtime directory.
 
-Files must be regular, non-symlinked, owned by the effective UID, mode `0600`,
-and descriptor-stable. Directories must be private and descriptor-stable.
+Files must be regular, non-symlinked, owned by the effective UID, and have no
+group/other permission bits (normally `0600` or `0400`). Directories must be
+owned by the effective UID and private. The secret directory is held open and
+the PAT is opened relative to that descriptor with `O_NOFOLLOW`; other runtime
+directories are checked by `lstat` plus `open`/`fstat` before use.
 Configuration is at most 64 KiB, token/PAT files at most 8 KiB, and unknown or
 duplicate JSON names, trailing data, controls, and noncanonical values reject.
+
+The binding's sorted capability list must be a non-empty subset of the
+manifest capabilities. Each DNS RPC checks its required capability. The grant
+digest is evidence of the host decision; it is not used as a substitute for
+the executable capability list.
 
 Configuration schema:
 
@@ -75,25 +83,30 @@ exact zone, and the sorted records.
 Record digest excludes record ID for logical equality; provider identity is a
 separate bounded field. Duplicate logical records remain distinct by record ID.
 
-Names use `@` for apex or lowercase relative labels. CNAME/MX targets are
+Names use `@` for apex or lowercase relative labels; a wildcard is admitted
+only as the complete leftmost label. CNAME/MX targets are
 lowercase absolute names with one trailing dot. TXT data remains exact UTF-8
 after control/NUL and size rejection. IP addresses use canonical textual form.
 
 ## HTTP client
 
 The production base URL is compiled, not configured. The client disables
-redirects and ambient proxies, requires TLS 1.2+, sets one bounded user agent,
+redirects, compression, and ambient proxies; bounds response headers,
+connections, and idle lifetime; requires TLS 1.2+; sets one bounded user agent,
 `Authorization: Bearer`, `Accept: application/json`, `Content-Type` for
-writes, and `X-Request-Id` from the correlation ID. Each call requires a
-deadline and uses the earlier caller/configured timeout.
+writes, and `X-Request-Id` from the correlation ID for reads and the distinct
+host operation ID for the one mutation. Each call requires a deadline and uses
+the earlier caller/configured timeout.
 
 Each full-zone walk uses locally constructed `page=1..10`, `pageSize=100`, and
 `totalRequired=true`; provider-returned links are never followed. Totals and
 page contents must be internally consistent, and two consecutive walks must
 produce byte-identical canonical projections before a snapshot is returned.
 
-Response bodies are bounded before strict decoding. Only documented 200, 201,
-and 204 success statuses are admitted per method. 400/401/403/404/409/422/429
+JSON success responses must declare `application/json`; parameters are
+accepted but other media types reject. Response bodies are bounded before
+strict decoding. Only documented 200, 201, and 204 success statuses are
+admitted per method. 400/401/403/404/409/422/429
 map to fixed reason codes. Other status, decode, TLS, DNS, timeout, and transport
 failures never include remote text.
 
@@ -109,7 +122,9 @@ An HTTP success with an unexpected after snapshot is `unknown`. An HTTP error
 with the exact postcondition may still be `applied`. Mutation RPC handlers do
 not retry. The HTTP API has no conditional-write primitive; this algorithm
 does not claim atomic compare-and-swap. Runtime admission requires the Stack
-controller path to be the sole writer during each zone mutation.
+controller path to be the sole external writer during each zone mutation. The
+service also serializes its complete precondition/write/reconciliation
+sequence so two admitted RPCs cannot write concurrently.
 
 ## Artifact and source boundary
 
@@ -133,7 +148,8 @@ or implement any non-record GoDaddy endpoint.
   rejection, status mapping, limits, redirects, and no proxy use;
 - create/replace/delete applied/not-applied/unknown matrices including lost
   responses and concurrent changes;
-- authenticated Unix-socket process handshake/health and DNS RPC integration;
+- authenticated compiled-process Unix-socket handshake/health plus fake-TLS
+  DNS RPC integration without a live provider;
 - race, repeat, shuffle, coverage, fuzz, build, deterministic artifact,
   clean-copy, and two cold reviews;
 - no live GoDaddy credential or zone mutation in automated verification.

@@ -107,8 +107,9 @@ Validation and canonicalization are linear in bounded input plus `O(n log n)`
 sorting for at most 1,000 zone records. One page walk allows at most ten pages
 of 100 records and 4 MiB total decoded response data; one admitted observation
 requires two identical walks, so it permits at most twenty list requests and
-8 MiB. There are no background goroutines beyond the gRPC server. One mutation
-costs two admitted observations plus one fixed API request: at most forty list
+8 MiB. The HTTP transport has bounded connections, headers, idle lifetime, and
+response bytes; it may maintain the normal connection goroutines required by
+Go's HTTP transport. One mutation costs two admitted observations plus one fixed API request: at most forty list
 requests and one mutation, normally four list requests and one mutation for a
 single-page zone. That cost is visible and intentional because a paginated,
 concurrently changing zone cannot honestly produce an exact precondition from
