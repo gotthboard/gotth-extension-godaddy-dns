@@ -50,6 +50,39 @@ func TestMutationTypeAndFieldRejection(t *testing.T) {
 	}
 }
 
+func TestCanonicalMutableSRV(t *testing.T) {
+	t.Parallel()
+	valid := apiRecord{Name: "_submission._tcp", Type: "SRV", Data: "mail.example.com.", TTL: 600, Priority: u32(10), Weight: u32(20), Port: u32(587), Service: "_submission", Protocol: "_tcp"}
+	if got, err := canonicalRecord(valid, false); err != nil || got != valid {
+		t.Fatalf("valid SRV got=%#v err=%v", got, err)
+	}
+	unavailable := valid
+	unavailable.Data = "."
+	if _, err := canonicalRecord(unavailable, false); err != nil {
+		t.Fatalf("unavailable-service target rejected: %v", err)
+	}
+	for name, mutate := range map[string]func(*apiRecord){
+		"owner mismatch":   func(record *apiRecord) { record.Name = "_imap._tcp" },
+		"owner wildcard":   func(record *apiRecord) { record.Name = "_submission._tcp.*.apps" },
+		"service dot":      func(record *apiRecord) { record.Service = "_sub.mission" },
+		"service hyphen":   func(record *apiRecord) { record.Service = "_-submission" },
+		"protocol":         func(record *apiRecord) { record.Protocol = "_quic" },
+		"missing priority": func(record *apiRecord) { record.Priority = nil },
+		"missing weight":   func(record *apiRecord) { record.Weight = nil },
+		"missing port":     func(record *apiRecord) { record.Port = nil },
+		"target":           func(record *apiRecord) { record.Data = "mail.example.com" },
+		"auxiliary":        func(record *apiRecord) { record.Tag = "issue" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := valid
+			mutate(&candidate)
+			if _, err := canonicalRecord(candidate, false); err == nil {
+				t.Fatal("invalid SRV accepted")
+			}
+		})
+	}
+}
+
 func TestSnapshotDeterminismAndIdentity(t *testing.T) {
 	t.Parallel()
 	a := apiRecord{RecordID: "id-a", Name: "@", Type: "A", Data: "192.0.2.1", TTL: 600}

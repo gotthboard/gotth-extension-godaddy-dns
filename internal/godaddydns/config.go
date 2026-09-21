@@ -28,7 +28,7 @@ const (
 var (
 	capabilities = []string{"dns.records.create", "dns.records.delete", "dns.records.observe", "dns.records.replace"}
 	BuildVersion = "dev"
-	mutableTypes = map[string]bool{"A": true, "AAAA": true, "CAA": true, "CNAME": true, "MX": true, "TXT": true}
+	mutableTypes = map[string]bool{"A": true, "AAAA": true, "CAA": true, "CNAME": true, "MX": true, "SRV": true, "TXT": true}
 )
 
 type Config struct {

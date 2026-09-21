@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 )
 
 func validConfigJSON() []byte {
-	return []byte(`{"schema":"gotth.extension.godaddy-dns.config.v1","environment":"ote","zones":["example.com"],"record_types":["A","MX","TXT"],"timeout_seconds":15}`)
+	return []byte(`{"schema":"gotth.extension.godaddy-dns.config.v1","environment":"ote","zones":["example.com"],"record_types":["A","MX","SRV","TXT"],"timeout_seconds":15}`)
 }
 
 func TestDecodeConfig(t *testing.T) {
@@ -17,7 +19,7 @@ func TestDecodeConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.AllowsZone("example.com") || c.AllowsZone("other.example") || !c.AllowsType("MX") {
+	if !c.AllowsZone("example.com") || c.AllowsZone("other.example") || !c.AllowsType("MX") || !c.AllowsType("SRV") {
 		t.Fatal("allowlists not enforced")
 	}
 	bad := [][]byte{
@@ -31,6 +33,36 @@ func TestDecodeConfig(t *testing.T) {
 		if _, err := decodeConfig(raw); err == nil {
 			t.Fatalf("bad config %d accepted", i)
 		}
+	}
+}
+
+func TestConfigurationMetadataMatchesMutableTypes(t *testing.T) {
+	data, err := os.ReadFile("../../configuration-metadata.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata struct {
+		Fields []struct {
+			Name   string   `json:"name"`
+			Values []string `json:"values"`
+		} `json:"fields"`
+	}
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	var configured []string
+	for _, field := range metadata.Fields {
+		if field.Name == "record_types" {
+			configured = field.Values
+		}
+	}
+	compiled := make([]string, 0, len(mutableTypes))
+	for recordType := range mutableTypes {
+		compiled = append(compiled, recordType)
+	}
+	sort.Strings(compiled)
+	if strings.Join(configured, ",") != strings.Join(compiled, ",") {
+		t.Fatalf("metadata types=%v compiled types=%v", configured, compiled)
 	}
 }
 

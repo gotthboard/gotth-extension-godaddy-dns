@@ -25,7 +25,7 @@ func authContext() (context.Context, context.CancelFunc) {
 }
 
 func baseService(client *providerClient, capabilities ...string) *Service {
-	return &Service{config: Config{Schema: ConfigSchema, Environment: "ote", Zones: []string{"example.com"}, RecordTypes: []string{"A", "MX", "TXT"}, TimeoutSeconds: 1}, binding: Binding{Capabilities: capabilities, ManifestSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", GrantSHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", SessionSHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}, token: testToken, version: "dev", client: client}
+	return &Service{config: Config{Schema: ConfigSchema, Environment: "ote", Zones: []string{"example.com"}, RecordTypes: []string{"A", "MX", "SRV", "TXT"}, TimeoutSeconds: 1}, binding: Binding{Capabilities: capabilities, ManifestSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", GrantSHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", SessionSHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}, token: testToken, version: "dev", client: client}
 }
 
 func TestAuthorizeRequiresDeadlineTokenAndGrant(t *testing.T) {
@@ -80,11 +80,11 @@ func TestCreateRecordEndToEndAgainstFakeProvider(t *testing.T) {
 	s := baseService(client, "dns.records.create")
 	ctx, cancel := authContext()
 	defer cancel()
-	response, err := s.CreateRecord(ctx, &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, ExpectedLogicalCount: 0, Desired: &dnsv1.Record{Name: "mail", Type: dnsv1.RecordType_RECORD_TYPE_A, Data: "192.0.2.2", Ttl: 600}})
+	response, err := s.CreateRecord(ctx, &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, ExpectedLogicalCount: 0, Desired: &dnsv1.Record{Name: "_submission._tcp", Type: dnsv1.RecordType_RECORD_TYPE_SRV, Data: "mail.example.com.", Ttl: 600, Priority: u32(10), Weight: u32(20), Port: u32(587), Service: "_submission", Protocol: "_tcp"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.GetOutcome() != dnsv1.MutationOutcome_MUTATION_OUTCOME_APPLIED || response.GetAffectedRecordId() != "created" || response.GetBeforeSnapshotSha256() != before.Digest || response.GetAfterSnapshotSha256() == before.Digest {
+	if response.GetOutcome() != dnsv1.MutationOutcome_MUTATION_OUTCOME_APPLIED || response.GetAffectedRecordId() != "created" || response.GetBeforeSnapshotSha256() != before.Digest || response.GetAfterSnapshotSha256() == before.Digest || response.GetResultingRecord().GetPort() != 587 {
 		t.Fatalf("unexpected response: %+v", response)
 	}
 }
@@ -105,6 +105,17 @@ func TestServiceRejectsStaleAndNoopMutations(t *testing.T) {
 	request.Desired.Data = "192.0.2.2"
 	if _, err := s.ReplaceRecord(ctx, request); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("stale replacement: %v", err)
+	}
+}
+
+func TestServiceRejectsConfiguredOutSRVBeforeHTTP(t *testing.T) {
+	s := baseService(nil, "dns.records.create")
+	s.config.RecordTypes = []string{"A"}
+	ctx, cancel := authContext()
+	defer cancel()
+	_, err := s.CreateRecord(ctx, &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Desired: &dnsv1.Record{Name: "_submission._tcp", Type: dnsv1.RecordType_RECORD_TYPE_SRV, Data: "mail.example.com.", Ttl: 600, Priority: u32(10), Weight: u32(20), Port: u32(587), Service: "_submission", Protocol: "_tcp"}})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("configured-out SRV reached provider: %v", err)
 	}
 }
 
@@ -171,7 +182,7 @@ func TestControlHandshakeHealthAndNewService(t *testing.T) {
 
 func TestObserveReplaceDeleteEndToEnd(t *testing.T) {
 	var mu sync.Mutex
-	records := []apiRecord{{RecordID: "target", Name: "@", Type: "A", Data: "192.0.2.1", TTL: 600}, {RecordID: "keep", Name: "txt", Type: "TXT", Data: "keep", TTL: 600}}
+	records := []apiRecord{{RecordID: "target", Name: "_submission._tcp", Type: "SRV", Data: "mail.example.com.", TTL: 600, Priority: u32(10), Weight: u32(20), Port: u32(587), Service: "_submission", Protocol: "_tcp"}, {RecordID: "keep", Name: "txt", Type: "TXT", Data: "keep", TTL: 600}}
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -207,7 +218,7 @@ func TestObserveReplaceDeleteEndToEnd(t *testing.T) {
 	}
 	before := snap(t, records...)
 	previous := records[0]
-	replaced, err := s.ReplaceRecord(ctx, &dnsv1.ReplaceRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, RecordId: "target", ExpectedRecordSha256: recordDigest(previous), Desired: &dnsv1.Record{Name: "@", Type: dnsv1.RecordType_RECORD_TYPE_A, Data: "192.0.2.9", Ttl: 600}})
+	replaced, err := s.ReplaceRecord(ctx, &dnsv1.ReplaceRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, RecordId: "target", ExpectedRecordSha256: recordDigest(previous), Desired: &dnsv1.Record{Name: "_submission._tcp", Type: dnsv1.RecordType_RECORD_TYPE_SRV, Data: "mail.example.com.", Ttl: 600, Priority: u32(10), Weight: u32(20), Port: u32(465), Service: "_submission", Protocol: "_tcp"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +234,7 @@ func TestObserveReplaceDeleteEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if deleted.GetOutcome() != dnsv1.MutationOutcome_MUTATION_OUTCOME_APPLIED || deleted.GetPreviousRecord().GetData() != "192.0.2.9" {
+	if deleted.GetOutcome() != dnsv1.MutationOutcome_MUTATION_OUTCOME_APPLIED || deleted.GetPreviousRecord().GetPort() != 465 || deleted.GetPreviousRecord().GetService() != "_submission" {
 		t.Fatalf("deletion: %+v", deleted)
 	}
 }

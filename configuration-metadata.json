@@ -3,7 +3,7 @@
   "fields": [
     {"name":"environment","kind":"enum","required":true,"values":["production","ote"]},
     {"name":"zones","kind":"string-list","required":true,"min":1,"max":32},
-    {"name":"record_types","kind":"enum-list","required":true,"values":["A","AAAA","CAA","CNAME","MX","TXT"]},
+    {"name":"record_types","kind":"enum-list","required":true,"values":["A","AAAA","CAA","CNAME","MX","SRV","TXT"]},
     {"name":"timeout_seconds","kind":"integer","required":true,"min":1,"max":30,"default":15},
     {"name":"godaddy.pat","kind":"secret","required":true}
   ]

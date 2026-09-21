@@ -80,7 +80,7 @@ func canonicalRecord(in apiRecord, observed bool) (apiRecord, error) {
 		}
 		r.Tag = strings.ToLower(r.Tag)
 	case "SRV":
-		if !observed || !validService(r.Service) || !validProtocol(r.Protocol) || !validAbsoluteDNSName(r.Data) || r.Priority == nil || r.Weight == nil || r.Port == nil || *r.Priority > 65535 || *r.Weight > 65535 || *r.Port > 65535 || r.Flag != nil || r.Tag != "" {
+		if !validService(r.Service) || !validProtocol(r.Protocol) || !validSRVOwner(r.Name, r.Service, r.Protocol) || (r.Data != "." && !validAbsoluteDNSName(r.Data)) || r.Priority == nil || r.Weight == nil || r.Port == nil || *r.Priority > 65535 || *r.Weight > 65535 || *r.Port > 65535 || r.Flag != nil || r.Tag != "" {
 			return apiRecord{}, errors.New("invalid SRV record")
 		}
 		r.Data, r.Service, r.Protocol = strings.ToLower(r.Data), strings.ToLower(r.Service), strings.ToLower(r.Protocol)
@@ -163,9 +163,26 @@ func validCAATag(v string) bool {
 	return true
 }
 func validService(v string) bool {
-	return len(v) >= 2 && len(v) <= 64 && v[0] == '_' && validRecordName(v)
+	if len(v) < 2 || len(v) > 63 || v[0] != '_' || v[1] == '-' || v[len(v)-1] == '-' || strings.ToLower(v) != v {
+		return false
+	}
+	for _, character := range v[1:] {
+		if !(character >= 'a' && character <= 'z' || character >= '0' && character <= '9' || character == '-') {
+			return false
+		}
+	}
+	return true
 }
 func validProtocol(v string) bool { return v == "_tcp" || v == "_udp" || v == "_sctp" }
+
+func validSRVOwner(name, service, protocol string) bool {
+	prefix := service + "." + protocol
+	if name == prefix {
+		return true
+	}
+	suffix := strings.TrimPrefix(name, prefix+".")
+	return strings.HasPrefix(name, prefix+".") && !strings.Contains(suffix, "*") && validRecordName(suffix)
+}
 
 func canonicalRecordBytes(r apiRecord, includeID bool) []byte {
 	if !includeID {

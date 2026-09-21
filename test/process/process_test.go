@@ -43,7 +43,7 @@ func TestAuthenticatedUnixProcess(t *testing.T) {
 	}
 	digest := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	binding, _ := json.Marshal(godaddydns.Binding{Schema: "gotth.extension.runtime-binding.v1", InstanceID: "11111111-1111-1111-1111-111111111111", ManifestSHA256: manifest, GrantSHA256: digest, SessionSHA256: digest, Capabilities: []string{"dns.records.observe"}})
-	config := []byte(`{"schema":"gotth.extension.godaddy-dns.config.v1","environment":"ote","zones":["example.com"],"record_types":["A"],"timeout_seconds":1}`)
+	config := []byte(`{"schema":"gotth.extension.godaddy-dns.config.v1","environment":"ote","zones":["example.com"],"record_types":["A","SRV"],"timeout_seconds":1}`)
 	paths := map[string][]byte{"config": config, "binding": binding, "token": []byte("12345678901234567890123456789012"), filepath.Join("secrets", godaddydns.SecretSlot): []byte("0123456789abcdef0123456789abcdef")}
 	for name, body := range paths {
 		if err := os.WriteFile(filepath.Join(root, name), body, 0o600); err != nil {
