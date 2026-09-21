@@ -31,18 +31,18 @@ Configuration schema:
   "schema": "gotth.extension.godaddy-dns.config.v1",
   "environment": "production",
   "zones": ["example.com"],
-  "record_types": ["A", "AAAA", "CAA", "CNAME", "MX", "TXT"],
+  "record_types": ["A", "AAAA", "CAA", "CNAME", "MX", "SRV", "TXT"],
   "timeout_seconds": 15
 }
 ```
 
 Zones are lowercase ASCII/punycode names without trailing dots. Record types
 are an exact sorted subset of the compiled mutable allowlist: `A`, `AAAA`,
-`CAA`, `CNAME`, `MX`, and `TXT`. Observation separately admits every type in
-the documented GoDaddy v3 schema: those six plus `NS`, `SOA`, and `SRV`. TTL is
+`CAA`, `CNAME`, `MX`, `SRV`, and `TXT`. Observation admits every type in the
+documented GoDaddy v3 schema; `NS` and `SOA` remain observation-only. TTL is
 600–86400.
 
-At most 32 zones and six mutable record types are configured. Zone and
+At most 32 zones and seven mutable record types are configured. Zone and
 zone-relative names are at most 253 and 255 bytes respectively; record data is
 at most 512 bytes; record IDs are opaque printable ASCII of 1–256 bytes. The
 provider does not trim, truncate, or repair inputs.
@@ -62,8 +62,13 @@ Replace/delete carry record ID and expected record digest. Records contain
 only zone-relative name, enum type, canonical data, TTL, and the fields valid
 for that type: `priority` for MX; `service`, `protocol`, `priority`, `weight`,
 and `port` for SRV; and `flag` and `tag` for CAA. Arbitrary provider JSON is
-impossible. SRV, NS, and SOA can appear only in observation responses and
-snapshot preconditions; they are rejected from mutation inputs.
+impossible. For SRV, `service` is one lowercase underscore-prefixed label,
+`protocol` is `_tcp`, `_udp`, or `_sctp`, and `name` must equal
+`service.protocol` or begin with `service.protocol.` followed by a valid
+relative owner suffix. `data` is a lowercase absolute target with one trailing
+dot or the exact unavailable-service target `.`. `priority`, `weight`, and
+`port` are all required and range from 0 through 65535. NS and SOA can appear
+only in observation responses and snapshot preconditions.
 
 Responses contain stable enum outcome/reason, before/after snapshot digests,
 canonical record identity, and inverse material. No response carries remote

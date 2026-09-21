@@ -56,6 +56,12 @@ outcomes. The extension never retries a mutation blindly.
 - `GDDNS-009`: Pass foundation negotiation, authenticated process integration,
   fake-GoDaddy outcome matrices, race/repeat/shuffle, artifact reproducibility,
   source-boundary review, and two cold admission passes.
+- `GDDNS-010`: Admit SRV as a configured mutable type using only the official
+  Domains v3 `DNSRecord` fields. Require coherent owner `name`, `service`, and
+  `protocol`, all three integer fields (`priority`, `weight`, and `port`), an
+  absolute canonical target or the RFC-defined `.` unavailable-service target,
+  and the same exact-before/reconciliation/inverse rules as every other
+  mutable record. NS and SOA remain observation-only.
 
 ## Non-goals
 

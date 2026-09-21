@@ -50,6 +50,13 @@ follows provider-supplied HATEOAS URLs. The snapshot digest is a state
 precondition, not authentication. Provider-owned SOA/NS and configured-out
 record types are observable state, not mutation authority.
 
+SRV is admitted through the same record methods, not a special endpoint. Its
+redundant GoDaddy fields are treated as one canonical owner: `name` must begin
+with exactly `service.protocol` and may then contain only a valid relative
+owner suffix. This prevents an approval for `_submission._tcp` from carrying
+contradictory service/protocol fields. The target is one canonical absolute
+name or `.`; priority, weight, and port are explicit bounded integers.
+
 Each mutation follows:
 
 1. observe and require the expected zone snapshot and expected record state;

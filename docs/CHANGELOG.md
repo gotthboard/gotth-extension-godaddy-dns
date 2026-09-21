@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### 2026-09-20 20:10 CDT — Define bounded SRV mutation
+
+- Added the child PRD, architecture, implementation specification, workflow
+  state, and verification contract for SRV create, replace, and delete through
+  the existing exact-record boundary.
+- Pinned the change to the official Domains v3 `DNSRecord` schema and required
+  coherent owner/service/protocol fields, all numeric SRV fields, canonical
+  absolute or `.` targets, existing reconciliation semantics, configuration
+  metadata parity, and a reproducible `1.0.0-alpha.2` candidate artifact.
+- NS/SOA mutation, live credentials, live DNS, publication, tags, and releases
+  remain excluded.
+
 ### 2026-09-20 — Define the bounded GoDaddy DNS provider
 
 - Froze the provider authority, official v3 record API boundary, file-only PAT
