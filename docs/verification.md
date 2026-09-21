@@ -1,5 +1,18 @@
 # Verification status
 
+## SRV mutation candidate — 2026-09-20
+
+Source `c1f3525753da982a3ba84a5f443ae8e35dadebc8` passed `make verify`, a
+50-run shuffled race repetition, three native fuzz targets, 79.9% package
+coverage, and an exact clean-clone `make verify`. Fake GoDaddy tests bind SRV
+create/replace/delete to applied, not-applied, unknown, lost-response,
+configured-out, stale-state, inverse, and field-validation behavior.
+
+The clean deterministic `1.0.0-alpha.2` candidate archive SHA-256 is
+`88ce5fb3c2bd2dc1f66707a8657886055632a31e0a4e7e1cec8e459e0742435f`.
+Its configuration metadata contains the exact compiled seven-type mutable
+allowlist. No artifact was published and no live provider was contacted.
+
 The independent provider implementation is admitted at source commit
 `b313b413dc9ea7d495fa45b21b26c6e3dc94b064`. No GoDaddy credential was read,
 no request was sent to GoDaddy, and no live DNS state changed. Release,

@@ -1,6 +1,6 @@
 schema_version = 1
 profile = "strict"
-active_feature = "foundation.srv-mutation"
+active_feature = "foundation"
 
 [[root_features]]
 id = "foundation"
@@ -20,7 +20,7 @@ required_verification = ["git diff --check", "go test ./...", "go test -race ./.
 id = "foundation.srv-mutation"
 root = "foundation"
 title = "Admit bounded SRV record mutation"
-state = "active"
+state = "done"
 path = "workflow/features/foundation/srv-mutation"
 source_path = "."
 branch = "workflow/feature/srv-mutation"

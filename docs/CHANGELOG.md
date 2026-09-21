@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### 2026-09-20 20:20 CDT — Admit bounded SRV mutation source
+
+- Added SRV to the compiled and metadata mutation allowlists without adding a
+  capability, endpoint, retry path, or generic JSON mechanism.
+- Enforced coherent SRV owner/service/protocol fields, required numeric
+  fields, canonical absolute or `.` target, exact configured-type authority,
+  and the existing serialized exact-before/reconciliation/inverse boundary.
+- Bound fake-provider create/replace/delete and outcome matrices, compiled
+  process startup, deterministic `1.0.0-alpha.2` artifact, clean clone, race,
+  repeat, shuffle, fuzz, coverage, and two clean final reviews to source
+  `c1f3525753da982a3ba84a5f443ae8e35dadebc8`.
+- Public GitHub mirroring, tag/artifact publication, live credentials, live DNS
+  mutation, and propagation acceptance remain blocked.
+
 ### 2026-09-20 20:10 CDT — Define bounded SRV mutation
 
 - Added the child PRD, architecture, implementation specification, workflow
