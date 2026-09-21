@@ -67,3 +67,47 @@ func TestReplaceAndDeleteClassification(t *testing.T) {
 		t.Fatal("unrelated deletion not detected")
 	}
 }
+
+func TestSRVClassificationMatrix(t *testing.T) {
+	t.Parallel()
+	keep := apiRecord{RecordID: "keep", Name: "txt", Type: "TXT", Data: "keep", TTL: 600}
+	desired := apiRecord{Name: "_submission._tcp", Type: "SRV", Data: "mail.example.com.", TTL: 600, Priority: u32(10), Weight: u32(20), Port: u32(587), Service: "_submission", Protocol: "_tcp"}
+	created := desired
+	created.RecordID = "srv"
+	beforeCreate := snap(t, keep)
+	afterCreate := snap(t, keep, created)
+	if got := classifyCreate(beforeCreate, afterCreate, desired, providerUnavailable, nil); got.Outcome != dnsv1.MutationOutcome_MUTATION_OUTCOME_APPLIED || got.Reason != dnsv1.MutationReason_MUTATION_REASON_RECONCILED {
+		t.Fatalf("lost SRV create response=%+v", got)
+	}
+	if got := classifyCreate(beforeCreate, beforeCreate, desired, providerRejected, nil); got.Outcome != dnsv1.MutationOutcome_MUTATION_OUTCOME_NOT_APPLIED {
+		t.Fatalf("rejected SRV create=%+v", got)
+	}
+	if got := classifyCreate(beforeCreate, snap(t, keep, apiRecord{RecordID: "other", Name: "other", Type: "TXT", Data: "changed", TTL: 600}), desired, providerAccepted, nil); got.Outcome != dnsv1.MutationOutcome_MUTATION_OUTCOME_UNKNOWN {
+		t.Fatalf("concurrent SRV create=%+v", got)
+	}
+
+	replacement := desired
+	replacement.Port = u32(465)
+	replaced := replacement
+	replaced.RecordID = created.RecordID
+	beforeMutation := snap(t, keep, created)
+	if got := classifyReplace(beforeMutation, snap(t, keep, replaced), created, replacement, providerAccepted, nil); got.Outcome != dnsv1.MutationOutcome_MUTATION_OUTCOME_APPLIED {
+		t.Fatalf("applied SRV replace=%+v", got)
+	}
+	if got := classifyReplace(beforeMutation, beforeMutation, created, replacement, providerRejected, nil); got.Outcome != dnsv1.MutationOutcome_MUTATION_OUTCOME_NOT_APPLIED {
+		t.Fatalf("rejected SRV replace=%+v", got)
+	}
+	if got := classifyReplace(beforeMutation, snap(t, replaced), created, replacement, providerAccepted, nil); got.Outcome != dnsv1.MutationOutcome_MUTATION_OUTCOME_UNKNOWN {
+		t.Fatalf("concurrent SRV replace=%+v", got)
+	}
+
+	if got := classifyDelete(beforeMutation, snap(t, keep), created, providerAccepted, nil); got.Outcome != dnsv1.MutationOutcome_MUTATION_OUTCOME_APPLIED {
+		t.Fatalf("applied SRV delete=%+v", got)
+	}
+	if got := classifyDelete(beforeMutation, beforeMutation, created, providerRejected, nil); got.Outcome != dnsv1.MutationOutcome_MUTATION_OUTCOME_NOT_APPLIED {
+		t.Fatalf("rejected SRV delete=%+v", got)
+	}
+	if got := classifyDelete(beforeMutation, snapshot{}, created, providerAccepted, errors.New("observe")); got.Outcome != dnsv1.MutationOutcome_MUTATION_OUTCOME_UNKNOWN || got.Reason != dnsv1.MutationReason_MUTATION_REASON_OBSERVATION_FAILED {
+		t.Fatalf("unknown SRV delete=%+v", got)
+	}
+}

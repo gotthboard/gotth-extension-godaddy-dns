@@ -329,7 +329,7 @@ func TestLostMutationResponseReconcilesApplied(t *testing.T) {
 	before := snap(t, records...)
 	ctx, cancel := authContext()
 	defer cancel()
-	response, err := s.CreateRecord(ctx, &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, ExpectedLogicalCount: 0, Desired: &dnsv1.Record{Name: "mail", Type: dnsv1.RecordType_RECORD_TYPE_A, Data: "192.0.2.2", Ttl: 600}})
+	response, err := s.CreateRecord(ctx, &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, ExpectedLogicalCount: 0, Desired: &dnsv1.Record{Name: "_submission._tcp", Type: dnsv1.RecordType_RECORD_TYPE_SRV, Data: "mail.example.com.", Ttl: 600, Priority: u32(10), Weight: u32(20), Port: u32(587), Service: "_submission", Protocol: "_tcp"}})
 	if err != nil {
 		t.Fatal(err)
 	}
