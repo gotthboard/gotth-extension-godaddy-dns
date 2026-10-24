@@ -27,6 +27,8 @@ published foundation SDK.
 The production release fixes the runtime and artifact version to `1.0.0`,
 adds deterministic SPDX 2.3 release metadata and linked dependency license
 coverage, and binds fake-provider fixtures for every mutable record shape. The
-archive embeds Git build identity and remains reproducible. Commit, tag, Forgejo publication, credential use, live provider access, DNS
-mutation, and deployment are explicit operator actions rather than build side
-effects.
+archive embeds Git build identity and remains reproducible. The repaired source
+is committed on `workflow/feature/v1-release` and its clean release set is
+sealed in external evidence. It has not been tagged or published. Forgejo
+publication, credential use, live provider access, DNS mutation, and deployment
+remain explicit operator actions rather than build side effects.

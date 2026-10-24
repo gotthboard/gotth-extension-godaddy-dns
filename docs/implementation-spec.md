@@ -6,7 +6,8 @@ The executable requires paths, never secret values:
 
 - `GOTTH_EXTENSION_CONFIG_FILE`: private canonical JSON configuration;
 - `GOTTH_EXTENSION_BINDING_FILE`: exact instance, manifest, grant, and session
-  digests plus the canonical granted-capability subset;
+  digests plus the exact negotiated interface and canonical granted-capability
+  subset;
 - `GOTTH_EXTENSION_SERVICE_TOKEN_FILE`: local RPC bearer token;
 - `GOTTH_EXTENSION_SECRET_DIR/godaddy.pat`: GoDaddy Bearer PAT;
 - `GOTTH_EXTENSION_SOCKET`: absent socket below a private runtime directory.
@@ -18,11 +19,17 @@ the PAT is opened relative to that descriptor with `O_NOFOLLOW`; other runtime
 directories are checked by `lstat` plus `open`/`fstat` before use.
 Configuration is at most 64 KiB, token/PAT files at most 8 KiB, and unknown or
 duplicate JSON names, trailing data, controls, and noncanonical values reject.
+The local service token is 32–256 printable ASCII bytes (`0x21` through
+`0x7e`); whitespace, DEL, non-ASCII UTF-8, and length violations reject
+before the socket is created.
 
-The binding's sorted capability list must be a non-empty subset of the
-manifest capabilities. Each DNS RPC checks its required capability. The grant
-digest is evidence of the host decision; it is not used as a substitute for
-the executable capability list.
+The binding must contain exactly the negotiated
+`gotth.dns.records` interface at major 1, minor 0. The binding's sorted
+capability list must be a non-empty subset of the manifest capabilities. Each
+DNS RPC checks both that exact interface and its required capability. Handshake
+echoes the bound interface list rather than reconstructing an unbound static
+claim. The grant digest is evidence of the host decision; it is not used as a
+substitute for the executable interface and capability lists.
 
 Configuration schema:
 
@@ -56,8 +63,12 @@ The seam package is `gotth.dns.provider.v1`; service `DNSRecords` exposes:
 - `ReplaceRecord`;
 - `DeleteRecord`.
 
-Every request carries a bounded lowercase UUID correlation ID. Mutations also
-carry a distinct host operation ID and expected-before snapshot digest.
+Every request carries a canonical lowercase RFC 4122 UUID correlation ID with
+version 1–5 and the RFC 4122 variant bits. Mutations also carry a distinct host
+operation ID with the same UUID semantics and an expected-before snapshot
+digest. The foundation instance ID remains governed by the published V1
+lexical `8-4-4-4-12` lowercase-hex grammar, which deliberately does not
+constrain version or variant bits; request IDs do not reuse that looser helper.
 Replace/delete carry record ID and expected record digest. Records contain
 only zone-relative name, enum type, canonical data, TTL, and the fields valid
 for that type: `priority` for MX; `service`, `protocol`, `priority`, `weight`,

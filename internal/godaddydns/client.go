@@ -54,10 +54,12 @@ type pageLink struct {
 	SubmissionSchema    json.RawMessage `json:"submissionSchema,omitempty"`
 }
 
+// Complexity: time O(p), Omega(p), tight Theta(p); auxiliary space O(p),
+// Omega(p), tight Theta(p); variable: p is the PAT byte length copied once.
 func newProviderClient(config Config, pat []byte) *providerClient {
-	base := "https://api.godaddy.com/v3/domains"
+	base := providerProductionBase
 	if config.Environment == "ote" {
-		base = "https://api.ote-godaddy.com/v3/domains"
+		base = providerOTEBase
 	}
 	transport := &http.Transport{Proxy: nil, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}, DisableCompression: true, MaxIdleConns: 2, MaxIdleConnsPerHost: 2, MaxConnsPerHost: 2, IdleConnTimeout: 30 * time.Second, MaxResponseHeaderBytes: 64 << 10}
 	return &providerClient{base: base, pat: append([]byte(nil), pat...), timeout: config.Timeout(), http: &http.Client{Transport: transport, Timeout: config.Timeout(), CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect disabled") }}}

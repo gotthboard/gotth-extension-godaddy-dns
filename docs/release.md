@@ -81,8 +81,11 @@ inside a private directory. The GoDaddy PAT belongs only in
 `$GOTTH_EXTENSION_SECRET_DIR/godaddy.pat`; never place it in a unit file,
 argument, environment value, manifest, or log.
 
-The controller must enforce the manifest/grant/session binding and must be the
-sole writer for a zone while a mutation is in flight. GoDaddy provides no
+The controller must write the exact negotiated `gotth.dns.records` 1.0
+interface into the runtime binding along with the session digest and granted
+capability subset. The extension fails startup without that exact interface and
+rechecks it on every DNS RPC. The controller must also be the sole writer for a
+zone while a mutation is in flight. GoDaddy provides no
 conditional record-write primitive, so the extension detects but cannot prevent
 an external writer racing the precondition and write. API reconciliation is not
 proof of authoritative-DNS propagation.

@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	extensioncore "github.com/gotthboard/gotth-extensions/pkg/extensions"
 	"golang.org/x/sys/unix"
 )
 
@@ -40,12 +41,13 @@ type Config struct {
 }
 
 type Binding struct {
-	Schema         string   `json:"schema"`
-	InstanceID     string   `json:"instance_id"`
-	ManifestSHA256 string   `json:"manifest_sha256"`
-	GrantSHA256    string   `json:"grant_sha256"`
-	SessionSHA256  string   `json:"session_sha256"`
-	Capabilities   []string `json:"capabilities"`
+	Schema         string                         `json:"schema"`
+	InstanceID     string                         `json:"instance_id"`
+	ManifestSHA256 string                         `json:"manifest_sha256"`
+	GrantSHA256    string                         `json:"grant_sha256"`
+	SessionSHA256  string                         `json:"session_sha256"`
+	Interfaces     []extensioncore.InterfaceGrant `json:"interfaces"`
+	Capabilities   []string                       `json:"capabilities"`
 }
 
 type RuntimeConfig struct {
@@ -82,7 +84,7 @@ func LoadRuntimeFromEnv() (RuntimeConfig, error) {
 	if err != nil {
 		return RuntimeConfig{}, errors.New("valid GoDaddy PAT required")
 	}
-	if !bytes.Equal(bytes.TrimSpace(pat), pat) || !validToken(string(pat), 16, 4096) {
+	if !bytes.Equal(bytes.TrimSpace(pat), pat) || !validPAT(string(pat)) {
 		clear(pat)
 		return RuntimeConfig{}, errors.New("valid GoDaddy PAT required")
 	}
@@ -102,7 +104,7 @@ func LoadRuntimeFromEnv() (RuntimeConfig, error) {
 		return RuntimeConfig{}, errors.New("artifact manifest binding mismatch")
 	}
 	token := string(tokenData)
-	if !validToken(token, 32, 256) {
+	if !validServiceToken(token) {
 		clear(pat)
 		return RuntimeConfig{}, errors.New("valid service token required")
 	}
@@ -150,16 +152,19 @@ func decodeConfig(data []byte) (Config, error) {
 	return c, nil
 }
 
+// Complexity: time O(n + c + i), Omega(1), tight Theta(n + c + i) on a valid
+// binding; auxiliary space O(n + c + i), Omega(1), tight Theta(n + c + i) on
+// a valid binding; variables: n input bytes, c capabilities, i interfaces.
 func decodeBinding(data []byte) (Binding, error) {
 	fields, err := decodeUniqueObject(data)
-	if err != nil || len(fields) != 6 {
+	if err != nil || len(fields) != 7 {
 		return Binding{}, errors.New("invalid extension binding")
 	}
 	var b Binding
 	if decodeField(fields, "schema", &b.Schema) != nil || b.Schema != "gotth.extension.runtime-binding.v1" {
 		return Binding{}, errors.New("invalid extension binding schema")
 	}
-	if decodeField(fields, "instance_id", &b.InstanceID) != nil || !validUUID(b.InstanceID) {
+	if decodeField(fields, "instance_id", &b.InstanceID) != nil || !validInstanceID(b.InstanceID) {
 		return Binding{}, errors.New("valid instance binding required")
 	}
 	for name, target := range map[string]*string{"manifest_sha256": &b.ManifestSHA256, "grant_sha256": &b.GrantSHA256, "session_sha256": &b.SessionSHA256} {
@@ -175,6 +180,10 @@ func decodeBinding(data []byte) (Binding, error) {
 		if j == len(capabilities) || capabilities[j] != capability || i > 0 && capability == b.Capabilities[i-1] {
 			return Binding{}, errors.New("valid capability binding required")
 		}
+	}
+	interfacesJSON, ok := fields["interfaces"]
+	if !ok || strictDecode(interfacesJSON, &b.Interfaces) != nil || len(b.Interfaces) != 1 || b.Interfaces[0] != (extensioncore.InterfaceGrant{Name: Interface, Major: 1, Minor: 0}) {
+		return Binding{}, errors.New("exact negotiated DNS interface required")
 	}
 	return b, nil
 }
@@ -326,12 +335,28 @@ func validateSocketPath(path string) error {
 // Omega(1), tight Theta(1), because both accepted strings have fixed length.
 func validVersion(v string) bool { return v == "dev" || v == "1.0.0" }
 
-func validToken(v string, min, max int) bool {
-	if len(v) < min || len(v) > max || !utf8.ValidString(v) {
+// Complexity: time O(n), Omega(1), tight Theta(n) when all runes are valid;
+// auxiliary space O(1), Omega(1), tight Theta(1); variable: n is len(v).
+func validPAT(v string) bool {
+	if len(v) < 16 || len(v) > 4096 || !utf8.ValidString(v) {
 		return false
 	}
 	for _, r := range v {
 		if r <= 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+// Complexity: time O(n), Omega(1), tight Theta(n) when all bytes are valid;
+// auxiliary space O(1), Omega(1), tight Theta(1); variable: n is len(v).
+func validServiceToken(v string) bool {
+	if len(v) < 32 || len(v) > 256 {
+		return false
+	}
+	for i := range len(v) {
+		if v[i] < 0x21 || v[i] > 0x7e {
 			return false
 		}
 	}
@@ -349,8 +374,18 @@ func validHex(v string, n int) bool {
 	}
 	return true
 }
-func validUUID(v string) bool {
+
+// Complexity: time O(1), Omega(1), tight Theta(1); auxiliary space O(1),
+// Omega(1), tight Theta(1), because input and allocation are bounded by 36
+// and 32 bytes respectively.
+func validInstanceID(v string) bool {
 	return len(v) == 36 && v[8] == '-' && v[13] == '-' && v[18] == '-' && v[23] == '-' && validHex(strings.ReplaceAll(v, "-", ""), 32)
+}
+
+// Complexity: time O(1), Omega(1), tight Theta(1); auxiliary space O(1),
+// Omega(1), tight Theta(1), because request UUID text is fixed at 36 bytes.
+func validRequestUUID(v string) bool {
+	return validInstanceID(v) && v[14] >= '1' && v[14] <= '5' && strings.ContainsRune("89ab", rune(v[19]))
 }
 
 func validZone(v string) bool {
@@ -382,4 +417,16 @@ func (c Config) AllowsType(typ string) bool {
 func (b Binding) AllowsCapability(capability string) bool {
 	i := sort.SearchStrings(b.Capabilities, capability)
 	return i < len(b.Capabilities) && b.Capabilities[i] == capability
+}
+
+// Complexity: time O(n), Omega(1), with no tight single bound; auxiliary space
+// Theta(1), where n is the number of negotiated interfaces.
+func (b Binding) AllowsInterface(name string, major, minor uint32) bool {
+	want := extensioncore.InterfaceGrant{Name: name, Major: major, Minor: minor}
+	for _, item := range b.Interfaces {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }

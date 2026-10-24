@@ -1,8 +1,8 @@
 # Production v1.0.0 release preparation
 
-State: `blocked` pending an immutable candidate commit and separately
-authorized tag/publication. Source verification may complete before those
-actions without fabricating release state.
+State: `blocked` pending separately authorized tag/publication. The
+repaired source is committed and the clean deterministic release set is sealed;
+neither fact creates a tag or hosted release.
 
 Base checkpoint:
 `c860b030fd7ff8297a244c1da1f7d57844bcde5e`.
@@ -18,8 +18,8 @@ Base checkpoint:
   pagination, status, transport, lost-response, reconciliation, post-application
   duplicate suppression, concurrency classification, and inverse material.
 - Compiled-process tests cover owner-only Unix transport, token authentication,
-  duplicate authentication rejection, handshake/health, and generic redacted
-  startup failure.
+  duplicate authentication rejection, real Handshake/health calls, fake-TLS
+  GoDaddy ObserveZone/CreateRecord RPCs, and generic redacted startup failure.
 - The release archive carries the static executable, canonical manifest,
   configuration metadata, combined project/dependency license text, and inner
   checksums. Deterministic SPDX 2.3 and provenance sidecars plus portable outer
@@ -38,7 +38,8 @@ Base checkpoint:
 - [x] sealed source patch, candidate tree, source manifest, raw logs, artifact
       checksums, and final evidence root;
 - [x] two fresh cold remediation reviews against the final sealed candidate;
-- [ ] immutable source commit (not authorized in this writer task);
+- [x] immutable source repair commit and clean `vcs.modified=false` release
+      evidence;
 - [ ] tag and hosted release (not authorized in this writer task);
 - [ ] production credential, live DNS acceptance, and deployment (explicitly
       outside this writer task).

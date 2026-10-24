@@ -10,6 +10,7 @@ import (
 	"time"
 
 	dnsv1 "github.com/gotthboard/gotth-extension-godaddy-dns/proto/gotth/dns/provider/v1"
+	extensioncore "github.com/gotthboard/gotth-extensions/pkg/extensions"
 	extensionsv1 "github.com/gotthboard/gotth-sdk/gen/go/gotth/extensions/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -29,20 +30,29 @@ type Service struct {
 
 const reconciliationHandoffBudget = 50 * time.Millisecond
 
+// Complexity: time O(c + i), Omega(1), tight Theta(c + i) for an admitted
+// runtime; auxiliary space O(c + i), Omega(1), tight Theta(c + i) for an
+// admitted runtime; variables: c capabilities and i interfaces copied.
 func NewService(runtime RuntimeConfig) (*Service, error) {
-	if runtime.ServiceToken == "" || len(runtime.PAT) < 16 || !validVersion(runtime.Version) {
+	if !validServiceToken(runtime.ServiceToken) || len(runtime.PAT) < 16 || !validVersion(runtime.Version) || len(runtime.Binding.Interfaces) != 1 || !runtime.Binding.AllowsInterface(Interface, 1, 0) {
 		return nil, errors.New("complete GoDaddy DNS runtime required")
 	}
-	return &Service{config: runtime.Config, binding: runtime.Binding, token: runtime.ServiceToken, version: runtime.Version, client: newProviderClient(runtime.Config, runtime.PAT)}, nil
+	binding := runtime.Binding
+	binding.Interfaces = append([]extensioncore.InterfaceGrant(nil), runtime.Binding.Interfaces...)
+	binding.Capabilities = append([]string(nil), runtime.Binding.Capabilities...)
+	return &Service{config: runtime.Config, binding: binding, token: runtime.ServiceToken, version: runtime.Version, client: newProviderClient(runtime.Config, runtime.PAT)}, nil
 }
 
 func (s *Service) Close() { s.client.close() }
 
+// Complexity: time O(c + i), Omega(1), with no single tight bound because
+// validation can fail before grant scans; auxiliary space O(1), Omega(1),
+// tight Theta(1); variables: c capabilities and i interfaces.
 func (s *Service) authorize(ctx context.Context, correlationID, capability string) error {
 	if _, ok := ctx.Deadline(); !ok {
 		return status.Error(codes.InvalidArgument, "deadline required")
 	}
-	if !validUUID(correlationID) {
+	if !validRequestUUID(correlationID) {
 		return status.Error(codes.InvalidArgument, "valid correlation ID required")
 	}
 	md, ok := metadata.FromIncomingContext(ctx)
@@ -56,9 +66,15 @@ func (s *Service) authorize(ctx context.Context, correlationID, capability strin
 	if capability != "" && !s.binding.AllowsCapability(capability) {
 		return status.Error(codes.PermissionDenied, "capability not granted")
 	}
+	if capability != "" && !s.binding.AllowsInterface(Interface, 1, 0) {
+		return status.Error(codes.PermissionDenied, "interface not granted")
+	}
 	return nil
 }
 
+// Complexity: time O(c + i), Omega(1), tight Theta(c + i) on success;
+// auxiliary space O(c + i), Omega(1), tight Theta(c + i) on success;
+// variables: c negotiated capabilities and i negotiated interfaces.
 func (s *Service) Handshake(ctx context.Context, in *extensionsv1.HandshakeRequest) (*extensionsv1.HandshakeResponse, error) {
 	if in == nil || len(in.GetChallenge()) != 32 {
 		return nil, status.Error(codes.InvalidArgument, "valid extension handshake required")
@@ -69,7 +85,11 @@ func (s *Service) Handshake(ctx context.Context, in *extensionsv1.HandshakeReque
 	if in.GetExpectedExtensionId() != ExtensionID || in.GetExpectedManifestSha256() != s.binding.ManifestSHA256 || in.GetExpectedGrantSha256() != s.binding.GrantSHA256 || in.GetExpectedSessionSha256() != s.binding.SessionSHA256 {
 		return nil, status.Error(codes.FailedPrecondition, "extension binding mismatch")
 	}
-	return &extensionsv1.HandshakeResponse{Challenge: append([]byte(nil), in.GetChallenge()...), ExtensionId: ExtensionID, ExtensionVersion: s.version, ManifestSha256: s.binding.ManifestSHA256, GrantSha256: s.binding.GrantSHA256, SessionSha256: s.binding.SessionSHA256, Control: &extensionsv1.ProtocolVersion{Name: "gotth.extensions.control", Major: 1, Minor: 0}, Interfaces: []*extensionsv1.InterfaceVersion{{Name: Interface, Major: 1, Minor: 0}}, Capabilities: append([]string(nil), s.binding.Capabilities...)}, nil
+	interfaces := make([]*extensionsv1.InterfaceVersion, len(s.binding.Interfaces))
+	for i, item := range s.binding.Interfaces {
+		interfaces[i] = &extensionsv1.InterfaceVersion{Name: item.Name, Major: item.Major, Minor: item.Minor}
+	}
+	return &extensionsv1.HandshakeResponse{Challenge: append([]byte(nil), in.GetChallenge()...), ExtensionId: ExtensionID, ExtensionVersion: s.version, ManifestSha256: s.binding.ManifestSHA256, GrantSha256: s.binding.GrantSHA256, SessionSha256: s.binding.SessionSHA256, Control: &extensionsv1.ProtocolVersion{Name: "gotth.extensions.control", Major: 1, Minor: 0}, Interfaces: interfaces, Capabilities: append([]string(nil), s.binding.Capabilities...)}, nil
 }
 
 func (s *Service) Health(ctx context.Context, in *extensionsv1.HealthRequest) (*extensionsv1.HealthResponse, error) {
@@ -203,7 +223,7 @@ func (s *Service) authorizeMutation(ctx context.Context, correlationID, operatio
 	if err := s.authorize(ctx, correlationID, capability); err != nil {
 		return err
 	}
-	if !validUUID(operationID) || operationID == correlationID || !validHex(expected, 64) {
+	if !validRequestUUID(operationID) || operationID == correlationID || !validHex(expected, 64) {
 		return status.Error(codes.InvalidArgument, "valid distinct operation precondition required")
 	}
 	if !s.config.AllowsZone(zone) {

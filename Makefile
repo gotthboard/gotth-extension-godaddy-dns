@@ -27,7 +27,7 @@ source:
 process:
 	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT HUP INT TERM; \
 	go build -o "$$tmp/gotth-extension-godaddy-dns" ./cmd/gotth-extension-godaddy-dns; \
-	GOTTH_PROVIDER_BINARY="$$tmp/gotth-extension-godaddy-dns" go test -count=1 ./test/process
+	GOTTH_PROVIDER_BINARY="$$tmp/gotth-extension-godaddy-dns" GOTTH_PROVIDER_SOURCE_ROOT="$$PWD" go test -count=1 ./test/process
 
 artifact:
 	./scripts/test-reproducible-artifact.sh

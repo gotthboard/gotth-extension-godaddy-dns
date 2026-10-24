@@ -1,5 +1,22 @@
 # Verification status
 
+## Final trust-boundary repair — 2026-10-24
+
+The source on `workflow/feature/v1-release` now binds and enforces the
+exact negotiated DNS interface, validates printable-ASCII service tokens,
+applies RFC 4122 version/variant semantics to RPC request IDs without changing
+foundation instance-ID grammar, and exercises real compiled-binary Handshake,
+ObserveZone, and CreateRecord calls against a fake TLS provider. Focused,
+compiled-process, security, source-boundary, reproducibility, and clean release
+gates were rerun against the repaired source.
+
+Exact commit/tree/toolchain identities, logs, source manifests, clean
+`vcs.modified=false` archive/SBOM/provenance/checksums, and the resealed
+evidence root are stored under
+`.artifacts/gotth-extension-godaddy-v1-release-final-20261024`. The source
+is committed, but there is no tag or hosted release; no push, credential, live
+provider request, DNS mutation, or deployment occurred.
+
 ## Production v1.0.0 preparation — 2026-10-23
 
 The initial source-preparation run was based on
@@ -14,7 +31,9 @@ scoped `gitleaks`, format, and temporary-index diff checks including untracked
 files. A final affected rerun repeated full, focused, race, provider-JSON fuzz,
 coverage, release-set, secret, format, and diff gates.
 
-The exact raw logs and candidate seal are under
+The following paragraph records the historical pre-commit state of that run;
+it is superseded by the final repair status above. The exact raw logs and
+candidate seal are under
 `.artifacts/gotth-extension-godaddy-v1-release-20261023`. The deterministic
 candidate archive, SPDX, provenance, and checksum set retained there are
 verification evidence only: because commit authority is excluded, their

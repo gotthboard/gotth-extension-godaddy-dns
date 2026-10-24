@@ -26,25 +26,29 @@ func authContext() (context.Context, context.CancelFunc) {
 }
 
 func baseService(client *providerClient, capabilities ...string) *Service {
-	return &Service{config: Config{Schema: ConfigSchema, Environment: "ote", Zones: []string{"example.com"}, RecordTypes: []string{"A", "MX", "SRV", "TXT"}, TimeoutSeconds: 1}, binding: Binding{Capabilities: capabilities, ManifestSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", GrantSHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", SessionSHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}, token: testToken, version: "dev", client: client}
+	return &Service{config: Config{Schema: ConfigSchema, Environment: "ote", Zones: []string{"example.com"}, RecordTypes: []string{"A", "MX", "SRV", "TXT"}, TimeoutSeconds: 1}, binding: Binding{Interfaces: []extensioncore.InterfaceGrant{{Name: Interface, Major: 1, Minor: 0}}, Capabilities: capabilities, ManifestSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", GrantSHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", SessionSHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}, token: testToken, version: "dev", client: client}
 }
 
 func TestAuthorizeRequiresDeadlineTokenAndGrant(t *testing.T) {
 	s := baseService(nil, "dns.records.observe")
-	if err := s.authorize(context.Background(), "11111111-1111-1111-1111-111111111111", "dns.records.observe"); status.Code(err) != codes.InvalidArgument {
+	if err := s.authorize(context.Background(), "11111111-1111-4111-8111-111111111111", "dns.records.observe"); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("missing deadline: %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if err := s.authorize(ctx, "11111111-1111-1111-1111-111111111111", "dns.records.observe"); status.Code(err) != codes.Unauthenticated {
+	if err := s.authorize(ctx, "11111111-1111-4111-8111-111111111111", "dns.records.observe"); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("missing token: %v", err)
 	}
 	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("x-gotth-service-token", testToken))
-	if err := s.authorize(ctx, "11111111-1111-1111-1111-111111111111", "dns.records.delete"); status.Code(err) != codes.PermissionDenied {
+	if err := s.authorize(ctx, "11111111-1111-4111-8111-111111111111", "dns.records.delete"); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("missing capability: %v", err)
 	}
-	if err := s.authorize(ctx, "11111111-1111-1111-1111-111111111111", "dns.records.observe"); err != nil {
+	if err := s.authorize(ctx, "11111111-1111-4111-8111-111111111111", "dns.records.observe"); err != nil {
 		t.Fatal(err)
+	}
+	s.binding.Interfaces[0].Minor = 1
+	if err := s.authorize(ctx, "11111111-1111-4111-8111-111111111111", "dns.records.observe"); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("unnegotiated interface accepted: %v", err)
 	}
 }
 
@@ -58,7 +62,7 @@ func TestCreateRecordEndToEndAgainstFakeProvider(t *testing.T) {
 		case http.MethodGet:
 			writePage(t, w, append([]apiRecord(nil), records...), len(records), 1)
 		case http.MethodPost:
-			if r.Header.Get("X-Request-Id") != "22222222-2222-2222-2222-222222222222" {
+			if r.Header.Get("X-Request-Id") != "22222222-2222-4222-8222-222222222222" {
 				t.Errorf("mutation operation ID not propagated: %q", r.Header.Get("X-Request-Id"))
 			}
 			var got apiRecord
@@ -81,7 +85,7 @@ func TestCreateRecordEndToEndAgainstFakeProvider(t *testing.T) {
 	s := baseService(client, "dns.records.create")
 	ctx, cancel := authContext()
 	defer cancel()
-	response, err := s.CreateRecord(ctx, &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, ExpectedLogicalCount: 0, Desired: &dnsv1.Record{Name: "_submission._tcp", Type: dnsv1.RecordType_RECORD_TYPE_SRV, Data: "mail.example.com.", Ttl: 600, Priority: u32(10), Weight: u32(20), Port: u32(587), Service: "_submission", Protocol: "_tcp"}})
+	response, err := s.CreateRecord(ctx, &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-4111-8111-111111111111", OperationId: "22222222-2222-4222-8222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, ExpectedLogicalCount: 0, Desired: &dnsv1.Record{Name: "_submission._tcp", Type: dnsv1.RecordType_RECORD_TYPE_SRV, Data: "mail.example.com.", Ttl: 600, Priority: u32(10), Weight: u32(20), Port: u32(587), Service: "_submission", Protocol: "_tcp"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +102,7 @@ func TestServiceRejectsStaleAndNoopMutations(t *testing.T) {
 	ctx, cancel := authContext()
 	defer cancel()
 	before := snap(t, records...)
-	request := &dnsv1.ReplaceRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, RecordId: "existing", ExpectedRecordSha256: recordDigest(records[0]), Desired: &dnsv1.Record{Name: "@", Type: dnsv1.RecordType_RECORD_TYPE_A, Data: "192.0.2.1", Ttl: 600}}
+	request := &dnsv1.ReplaceRecordRequest{CorrelationId: "11111111-1111-4111-8111-111111111111", OperationId: "22222222-2222-4222-8222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, RecordId: "existing", ExpectedRecordSha256: recordDigest(records[0]), Desired: &dnsv1.Record{Name: "@", Type: dnsv1.RecordType_RECORD_TYPE_A, Data: "192.0.2.1", Ttl: 600}}
 	if _, err := s.ReplaceRecord(ctx, request); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("no-op replacement: %v", err)
 	}
@@ -114,7 +118,7 @@ func TestServiceRejectsConfiguredOutSRVBeforeHTTP(t *testing.T) {
 	s.config.RecordTypes = []string{"A"}
 	ctx, cancel := authContext()
 	defer cancel()
-	_, err := s.CreateRecord(ctx, &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Desired: &dnsv1.Record{Name: "_submission._tcp", Type: dnsv1.RecordType_RECORD_TYPE_SRV, Data: "mail.example.com.", Ttl: 600, Priority: u32(10), Weight: u32(20), Port: u32(587), Service: "_submission", Protocol: "_tcp"}})
+	_, err := s.CreateRecord(ctx, &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-4111-8111-111111111111", OperationId: "22222222-2222-4222-8222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Desired: &dnsv1.Record{Name: "_submission._tcp", Type: dnsv1.RecordType_RECORD_TYPE_SRV, Data: "mail.example.com.", Ttl: 600, Priority: u32(10), Weight: u32(20), Port: u32(587), Service: "_submission", Protocol: "_tcp"}})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("configured-out SRV reached provider: %v", err)
 	}
@@ -154,7 +158,7 @@ func TestFoundationNegotiation(t *testing.T) {
 }
 
 func TestControlHandshakeHealthAndNewService(t *testing.T) {
-	runtime := RuntimeConfig{Config: Config{Schema: ConfigSchema, Environment: "ote", Zones: []string{"example.com"}, RecordTypes: []string{"A"}, TimeoutSeconds: 1}, Binding: Binding{ManifestSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", GrantSHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", SessionSHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", Capabilities: []string{"dns.records.observe"}}, ServiceToken: testToken, PAT: []byte("0123456789abcdef0123456789abcdef"), Version: "dev"}
+	runtime := RuntimeConfig{Config: Config{Schema: ConfigSchema, Environment: "ote", Zones: []string{"example.com"}, RecordTypes: []string{"A"}, TimeoutSeconds: 1}, Binding: Binding{ManifestSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", GrantSHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", SessionSHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", Interfaces: []extensioncore.InterfaceGrant{{Name: Interface, Major: 1, Minor: 0}}, Capabilities: []string{"dns.records.observe"}}, ServiceToken: testToken, PAT: []byte("0123456789abcdef0123456789abcdef"), Version: "dev"}
 	s, err := NewService(runtime)
 	if err != nil {
 		t.Fatal(err)
@@ -162,21 +166,21 @@ func TestControlHandshakeHealthAndNewService(t *testing.T) {
 	defer s.Close()
 	ctx, cancel := authContext()
 	defer cancel()
-	handshake, err := s.Handshake(ctx, &extensionsv1.HandshakeRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", Challenge: make([]byte, 32), ExpectedExtensionId: ExtensionID, ExpectedManifestSha256: runtime.Binding.ManifestSHA256, ExpectedGrantSha256: runtime.Binding.GrantSHA256, ExpectedSessionSha256: runtime.Binding.SessionSHA256})
+	handshake, err := s.Handshake(ctx, &extensionsv1.HandshakeRequest{CorrelationId: "11111111-1111-4111-8111-111111111111", Challenge: make([]byte, 32), ExpectedExtensionId: ExtensionID, ExpectedManifestSha256: runtime.Binding.ManifestSHA256, ExpectedGrantSha256: runtime.Binding.GrantSHA256, ExpectedSessionSha256: runtime.Binding.SessionSHA256})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(handshake.GetCapabilities()) != 1 || handshake.GetCapabilities()[0] != "dns.records.observe" {
+	if len(handshake.GetCapabilities()) != 1 || handshake.GetCapabilities()[0] != "dns.records.observe" || len(handshake.GetInterfaces()) != 1 || handshake.GetInterfaces()[0].GetName() != Interface || handshake.GetInterfaces()[0].GetMajor() != 1 || handshake.GetInterfaces()[0].GetMinor() != 0 {
 		t.Fatalf("grant not reflected: %+v", handshake)
 	}
-	health, err := s.Health(ctx, &extensionsv1.HealthRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", SessionSha256: runtime.Binding.SessionSHA256})
+	health, err := s.Health(ctx, &extensionsv1.HealthRequest{CorrelationId: "11111111-1111-4111-8111-111111111111", SessionSha256: runtime.Binding.SessionSHA256})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if health.GetState() != extensionsv1.HealthState_HEALTH_STATE_READY {
 		t.Fatalf("health: %+v", health)
 	}
-	if _, err := s.Health(ctx, &extensionsv1.HealthRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", SessionSha256: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}); status.Code(err) != codes.FailedPrecondition {
+	if _, err := s.Health(ctx, &extensionsv1.HealthRequest{CorrelationId: "11111111-1111-4111-8111-111111111111", SessionSha256: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("session mismatch accepted: %v", err)
 	}
 }
@@ -210,7 +214,7 @@ func TestObserveReplaceDeleteEndToEnd(t *testing.T) {
 	s := baseService(testClient(server), "dns.records.delete", "dns.records.observe", "dns.records.replace")
 	ctx, cancel := authContext()
 	defer cancel()
-	observed, err := s.ObserveZone(ctx, &dnsv1.ObserveZoneRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", Zone: "example.com"})
+	observed, err := s.ObserveZone(ctx, &dnsv1.ObserveZoneRequest{CorrelationId: "11111111-1111-4111-8111-111111111111", Zone: "example.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +223,7 @@ func TestObserveReplaceDeleteEndToEnd(t *testing.T) {
 	}
 	before := snap(t, records...)
 	previous := records[0]
-	replaced, err := s.ReplaceRecord(ctx, &dnsv1.ReplaceRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, RecordId: "target", ExpectedRecordSha256: recordDigest(previous), Desired: &dnsv1.Record{Name: "_submission._tcp", Type: dnsv1.RecordType_RECORD_TYPE_SRV, Data: "mail.example.com.", Ttl: 600, Priority: u32(10), Weight: u32(20), Port: u32(465), Service: "_submission", Protocol: "_tcp"}})
+	replaced, err := s.ReplaceRecord(ctx, &dnsv1.ReplaceRecordRequest{CorrelationId: "11111111-1111-4111-8111-111111111111", OperationId: "22222222-2222-4222-8222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, RecordId: "target", ExpectedRecordSha256: recordDigest(previous), Desired: &dnsv1.Record{Name: "_submission._tcp", Type: dnsv1.RecordType_RECORD_TYPE_SRV, Data: "mail.example.com.", Ttl: 600, Priority: u32(10), Weight: u32(20), Port: u32(465), Service: "_submission", Protocol: "_tcp"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +235,7 @@ func TestObserveReplaceDeleteEndToEnd(t *testing.T) {
 	mu.Unlock()
 	afterReplace := snap(t, afterReplaceRecords...)
 	current, _ := findRecord(afterReplace, "target")
-	deleted, err := s.DeleteRecord(ctx, &dnsv1.DeleteRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "33333333-3333-3333-3333-333333333333", Zone: "example.com", ExpectedSnapshotSha256: afterReplace.Digest, RecordId: "target", ExpectedRecordSha256: recordDigest(current)})
+	deleted, err := s.DeleteRecord(ctx, &dnsv1.DeleteRecordRequest{CorrelationId: "11111111-1111-4111-8111-111111111111", OperationId: "33333333-3333-4333-8333-333333333333", Zone: "example.com", ExpectedSnapshotSha256: afterReplace.Digest, RecordId: "target", ExpectedRecordSha256: recordDigest(current)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,11 +282,11 @@ func TestConcurrentMutationsAreSerialized(t *testing.T) {
 		go func(i int, data string) {
 			ctx, cancel := authContext()
 			defer cancel()
-			op := "22222222-2222-2222-2222-222222222222"
+			op := "22222222-2222-4222-8222-222222222222"
 			if i == 1 {
-				op = "33333333-3333-3333-3333-333333333333"
+				op = "33333333-3333-4333-8333-333333333333"
 			}
-			response, err := s.CreateRecord(ctx, &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: op, Zone: "example.com", ExpectedSnapshotSha256: before.Digest, ExpectedLogicalCount: 0, Desired: &dnsv1.Record{Name: "mail", Type: dnsv1.RecordType_RECORD_TYPE_A, Data: data, Ttl: 600}})
+			response, err := s.CreateRecord(ctx, &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-4111-8111-111111111111", OperationId: op, Zone: "example.com", ExpectedSnapshotSha256: before.Digest, ExpectedLogicalCount: 0, Desired: &dnsv1.Record{Name: "mail", Type: dnsv1.RecordType_RECORD_TYPE_A, Data: data, Ttl: 600}})
 			results <- result{response, err}
 		}(i, data)
 	}
@@ -330,7 +334,7 @@ func TestLostMutationResponseReconcilesApplied(t *testing.T) {
 	before := snap(t, records...)
 	ctx, cancel := authContext()
 	defer cancel()
-	response, err := s.CreateRecord(ctx, &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, ExpectedLogicalCount: 0, Desired: &dnsv1.Record{Name: "_submission._tcp", Type: dnsv1.RecordType_RECORD_TYPE_SRV, Data: "mail.example.com.", Ttl: 600, Priority: u32(10), Weight: u32(20), Port: u32(587), Service: "_submission", Protocol: "_tcp"}})
+	response, err := s.CreateRecord(ctx, &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-4111-8111-111111111111", OperationId: "22222222-2222-4222-8222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, ExpectedLogicalCount: 0, Desired: &dnsv1.Record{Name: "_submission._tcp", Type: dnsv1.RecordType_RECORD_TYPE_SRV, Data: "mail.example.com.", Ttl: 600, Priority: u32(10), Weight: u32(20), Port: u32(587), Service: "_submission", Protocol: "_tcp"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -373,7 +377,7 @@ func TestMutationDeadlineExhaustionRetainsReconciliationBudget(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 800*time.Millisecond)
 	defer cancel()
 	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("x-gotth-service-token", testToken))
-	response, err := s.CreateRecord(ctx, &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, ExpectedLogicalCount: 0, Desired: &dnsv1.Record{Name: "mail", Type: dnsv1.RecordType_RECORD_TYPE_A, Data: "192.0.2.2", Ttl: 600}})
+	response, err := s.CreateRecord(ctx, &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-4111-8111-111111111111", OperationId: "22222222-2222-4222-8222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, ExpectedLogicalCount: 0, Desired: &dnsv1.Record{Name: "mail", Type: dnsv1.RecordType_RECORD_TYPE_A, Data: "192.0.2.2", Ttl: 600}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -409,7 +413,7 @@ func TestMutableRecordFixturesAgainstFakeProvider(t *testing.T) {
 					writePage(t, w, append([]apiRecord(nil), records...), len(records), 1)
 				case http.MethodPost:
 					posts++
-					if r.URL.Path != "/v3/domains/zones/example.com/dns-records" || r.Header.Get("X-Request-Id") != "22222222-2222-2222-2222-222222222222" || r.Header.Get("Content-Type") != "application/json" {
+					if r.URL.Path != "/v3/domains/zones/example.com/dns-records" || r.Header.Get("X-Request-Id") != "22222222-2222-4222-8222-222222222222" || r.Header.Get("Content-Type") != "application/json" {
 						t.Errorf("unexpected mutation request: %s headers=%v", r.URL.Path, r.Header)
 					}
 					if err := json.NewDecoder(r.Body).Decode(&posted); err != nil {
@@ -431,7 +435,7 @@ func TestMutableRecordFixturesAgainstFakeProvider(t *testing.T) {
 			before := snap(t, records...)
 			ctx, cancel := authContext()
 			defer cancel()
-			request := &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, ExpectedLogicalCount: 0, Desired: fixture.desired}
+			request := &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-4111-8111-111111111111", OperationId: "22222222-2222-4222-8222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, ExpectedLogicalCount: 0, Desired: fixture.desired}
 			response, err := s.CreateRecord(ctx, request)
 			if err != nil {
 				t.Fatal(err)

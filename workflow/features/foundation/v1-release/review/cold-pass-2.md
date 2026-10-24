@@ -1,5 +1,11 @@
 # Cold review pass 2 — production v1.0.0
 
+Historical verdict, superseded 2026-10-24. A later final review found real
+interface binding, token grammar, request-UUID, process-coverage, and status
+defects. The repaired state is recorded in
+`../evidence/2026-10-24-final-defect-repair.md`; the original review text
+is retained rather than rewritten as if it had found those issues.
+
 ## Verdict
 
 Accept with constraints.

@@ -47,8 +47,11 @@ The extension manifest declares `gotth.dns.records` major 1 and capabilities
 `dns.records.observe`, `dns.records.create`, `dns.records.replace`, and
 `dns.records.delete`. The host grant may select a strict subset. Configuration
 further limits exact zones and mutable record types. A mutation request must
-satisfy all three:
-manifest declaration, host grant, and local configuration.
+satisfy all three: the exact negotiated `gotth.dns.records` 1.0 interface,
+the required host-granted capability, and local configuration. The runtime
+binding carries the negotiated interface list explicitly, startup accepts only
+that one exact interface, every DNS RPC rechecks it, and Handshake reports the
+bound list rather than a reconstructed constant.
 
 The GoDaddy PAT is provider-scoped but remains powerful. It is opened from a
 private regular file after symlink, ownership, mode, size, and replacement
@@ -56,6 +59,12 @@ checks. The value exists only in the outbound Authorization header. Logs and
 RPC evidence contain stable categories, correlation IDs, digests, record IDs,
 and HTTP status classes—not credentials, response bodies, or arbitrary remote
 text.
+
+The local service token admits only printable ASCII without whitespace. RPC
+correlation and mutation operation IDs use canonical lowercase RFC 4122 UUIDs
+with versions 1–5 and RFC 4122 variant bits. This is intentionally stricter
+than the published foundation's lexical instance-ID grammar; widening request
+IDs by reusing the instance validator would blur separate trust contracts.
 
 ## State and reconciliation
 

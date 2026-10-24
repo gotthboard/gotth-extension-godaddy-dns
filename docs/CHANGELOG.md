@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-10-24 — Repair final v1.0.0 trust-boundary defects
+
+- Bound the runtime to the exact negotiated `gotth.dns.records` 1.0
+  interface, enforced it on DNS RPC authorization, and made Handshake report
+  the bound interface list.
+- Restricted local service tokens to printable ASCII and separated strict RFC
+  4122 version/variant validation for RPC correlation and operation IDs from
+  the published foundation's deliberately lexical instance-ID grammar.
+- Added real compiled-binary Handshake and fake-TLS provider Observe/Create RPC
+  coverage, corrected stale commit/release workflow prose, and rebuilt clean
+  deterministic release evidence. No push, tag, hosted release, credential,
+  live provider call, DNS mutation, or deployment was performed.
+- Verification and identities are sealed under
+  `.artifacts/gotth-extension-godaddy-v1-release-final-20261024`.
+  Source: current commit; hash assigned by Git after commit.
+
 ## v1.0.0 — 2026-10-23
 
 - Fixed the production runtime, manifest, archive, and release documentation to

@@ -73,6 +73,11 @@ outcomes. The extension never retries a mutation blindly.
   extension-control protobuf and gRPC API from the SDK; and reject a duplicate
   repository-local extension-control source or generated copy. The separate
   provider-owned DNS interface remains local.
+- `GDDNS-012`: Bind the runtime to exactly the negotiated
+  `gotth.dns.records` 1.0 interface and enforce it on every DNS RPC; admit
+  only 32–256-byte printable-ASCII local service tokens; and require canonical
+  lowercase RFC 4122 version 1–5/variant request UUIDs without narrowing the
+  published foundation's lexical instance-ID grammar.
 
 ## Non-goals
 
@@ -86,10 +91,12 @@ outcomes. The extension never retries a mutation blindly.
 
 ## Acceptance
 
-All request validation, exact record canonicalization, pagination, API status,
+All request validation, exact interface/capability binding, exact record
+canonicalization, pagination, API status,
 timeout, cancellation, ambiguous write, reconciliation, post-application
 duplicate suppression through exact-before rejection, inverse material, secret
-redaction, transport authentication, linked-dependency licensing, SBOM, and
-artifact behavior have tests.
+redaction, transport authentication, compiled-binary Handshake and fake-provider
+DNS RPC transport, linked-dependency licensing, SBOM, and artifact behavior
+have tests.
 No live zone, credential, tag, release, or deployment is used as a test
 fixture.
