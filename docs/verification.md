@@ -1,5 +1,31 @@
 # Verification status
 
+## Published Extensions V1 adoption candidate — 2026-10-23
+
+The candidate selects exact published `gotth-extensions v1.0.0` and
+`gotth-sdk v1.0.0` without replacement. `scripts/check-published-control.sh`
+checks both published control sources, the SDK source binding, the foundation
+descriptor pin, and absence of a repository-local control copy.
+`TestPublishedControlDescriptorBinding` checks the descriptor and RPC paths
+actually linked into the extension. The local provider-owned DNS protocol is
+unchanged.
+
+The migration passed focused unit and compiled-process tests before the local
+control copy was deleted, then passed focused unit, binding, vet, build,
+compiled-process, and diff checks after deletion. On the designated development
+host, the migrated executable code passed full tests, a five-run focused fake-
+GoDaddy matrix, full race, 20 normal repeats, 20 shuffled race repeats, all
+three native fuzz targets, vet, build, compiled-process integration, two-build
+artifact reproducibility, `govulncheck`, `gitleaks`, format, and diff checks.
+`govulncheck` found no vulnerabilities and `gitleaks` found no leaks.
+
+Logs, the final binary patch, candidate tree identity, source checksums, and
+verification summary are recorded under the parent workspace artifact
+`.artifacts/gotth-extension-godaddy-v1-adoption2-20261023`. No live provider,
+credential, or DNS state was used. The candidate is ready for checkpoint commit.
+Push and default-branch movement remain outside this task; tag, release, live
+provider access, DNS changes, and deployment require separate authorization.
+
 ## SRV mutation candidate — 2026-09-20
 
 Source `c1f3525753da982a3ba84a5f443ae8e35dadebc8` passed `make verify`, a

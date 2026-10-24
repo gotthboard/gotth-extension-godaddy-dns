@@ -131,6 +131,19 @@ controller path to be the sole external writer during each zone mutation. The
 service also serializes its complete precondition/write/reconciliation
 sequence so two admitted RPCs cannot write concurrently.
 
+## Published dependency boundary
+
+`go.mod` must select exactly `github.com/gotthboard/gotth-extensions v1.0.0`
+and `github.com/gotthboard/gotth-sdk v1.0.0` with no `replace` directive.
+Control implementation and tests import the SDK generated package. Verification
+checks the published foundation and SDK control sources against the same pinned
+SHA-256, checks the SDK source binding and foundation descriptor digest, hashes
+the descriptor linked into this program, pins both control RPC paths, and fails
+if any local `proto/gotth/extensions/v1/control*` copy or import reappears.
+
+The local `proto/gotth/dns/provider/v1` source and generated Go remain the
+provider-owned DNS seam and are not deleted by this adoption.
+
 ## Artifact and source boundary
 
 The deterministic archive is

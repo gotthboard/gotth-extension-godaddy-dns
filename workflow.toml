@@ -1,6 +1,6 @@
 schema_version = 1
 profile = "strict"
-active_feature = "foundation"
+active_feature = "foundation.extensions-v1-adoption"
 
 [[root_features]]
 id = "foundation"
@@ -26,3 +26,14 @@ source_path = "."
 branch = "workflow/feature/srv-mutation"
 dependencies = ["foundation.source@b313b413dc9ea7d495fa45b21b26c6e3dc94b064"]
 required_verification = ["official v3 SRV schema", "strict SRV canonicalization", "create replace delete outcome matrices", "configuration metadata parity", "process integration", "race repeat shuffle fuzz", "reproducible 1.0.0-alpha.2 artifact", "clean clone", "full repository gates", "two clean cold reviews"]
+
+[[features]]
+id = "foundation.extensions-v1-adoption"
+root = "foundation"
+title = "Adopt published Extensions V1 foundation and SDK"
+state = "blocked"
+path = "workflow/features/foundation/extensions-v1-adoption"
+source_path = "."
+branch = "workflow/feature/extensions-v1-adoption"
+dependencies = ["foundation.srv-mutation@8529e8d13dcd7634c6810b1b937fb652564283a4", "gotth-extensions@v1.0.0", "gotth-sdk@v1.0.0"]
+required_verification = ["git diff --check", "gofmt clean", "exact published modules without replace", "published control source and descriptor binding", "no repository-local control copy", "fake GoDaddy conformance", "compiled process", "race repeat shuffle fuzz", "reproducible artifact", "govulncheck", "gitleaks", "default-branch reconciliation or exact blocker"]

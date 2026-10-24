@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	dnsv1 "github.com/gotthboard/gotth-extension-godaddy-dns/proto/gotth/dns/provider/v1"
-	extensionsv1 "github.com/gotthboard/gotth-extension-godaddy-dns/proto/gotth/extensions/v1"
+	extensionsv1 "github.com/gotthboard/gotth-sdk/gen/go/gotth/extensions/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"

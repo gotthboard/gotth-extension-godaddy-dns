@@ -62,6 +62,12 @@ outcomes. The extension never retries a mutation blindly.
   absolute canonical target or the RFC-defined `.` unavailable-service target,
   and the same exact-before/reconciliation/inverse rules as every other
   mutable record. NS and SOA remain observation-only.
+- `GDDNS-011`: Select published `gotth-extensions v1.0.0` and `gotth-sdk
+  v1.0.0` without module replacement. Preserve the foundation package import
+  for manifest, grant, session, and canonicalization behavior; consume the
+  extension-control protobuf and gRPC API from the SDK; and reject a duplicate
+  repository-local extension-control source or generated copy. The separate
+  provider-owned DNS interface remains local.
 
 ## Non-goals
 

@@ -24,6 +24,23 @@ policy, choose hostnames, grant itself zones, or schedule retries. It translates
 one admitted action into the fixed GoDaddy record API and reports bounded
 evidence.
 
+## Published foundation and control dependencies
+
+The canonical foundation API remains
+`github.com/gotthboard/gotth-extensions/pkg/extensions` at `v1.0.0`; this keeps
+manifest validation, canonical digests, negotiation, grant, and session
+semantics on the published foundation contract. The extension-control wire API
+is linked from
+`github.com/gotthboard/gotth-sdk/gen/go/gotth/extensions/v1` at `v1.0.0`.
+Neither module may be replaced. Source SHA-256, descriptor SHA-256, Go package,
+and full RPC paths are pinned by executable checks, and a repository-local
+control copy is forbidden.
+
+The DNS record interface is intentionally different: `gotth.dns.provider.v1`
+is provider-owned and remains in this repository because the published SDK does
+not define it. Moving it would be a separate interface-publication decision,
+not cleanup hidden inside foundation adoption.
+
 ## Trust and authority
 
 The extension manifest declares `gotth.dns.records` major 1 and capabilities

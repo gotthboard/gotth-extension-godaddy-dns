@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### 2026-10-23 — Adopt published Extensions V1 foundation and SDK
+
+- Selected published `gotth-extensions v1.0.0` and `gotth-sdk v1.0.0` without
+  replacements, while preserving foundation imports from `pkg/extensions`.
+- Migrated extension-control imports and server/client registration to the SDK,
+  added exact source/descriptor/RPC binding gates, and removed the tested
+  repository-local control schema and generated Go copies. The provider-owned
+  DNS interface remains local.
+- Based the candidate on the SRV branch tip, which is a linear descendant of
+  the foundation tip, so both histories are retained without merge, rebase, or
+  overwrite. The default foundation branch was not moved because commit and
+  push are outside this task.
+- No credential was read, no live provider was contacted, and no DNS, tag,
+  release, or deployment state changed.
+
 ### 2026-09-20 20:20 CDT — Admit bounded SRV mutation source
 
 - Added SRV to the compiled and metadata mutation allowlists without adding a
