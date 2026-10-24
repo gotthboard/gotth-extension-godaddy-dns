@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -85,11 +86,38 @@ func TestAuthenticatedUnixProcess(t *testing.T) {
 		t.Fatalf("unauthenticated call: %v", err)
 	}
 	authed := metadata.AppendToOutgoingContext(ctx, "x-gotth-service-token", "12345678901234567890123456789012")
+	duplicated := metadata.NewOutgoingContext(ctx, metadata.Pairs("x-gotth-service-token", "12345678901234567890123456789012", "x-gotth-service-token", "12345678901234567890123456789012"))
+	if _, err := client.Health(duplicated, request); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("duplicate authentication metadata accepted: %v", err)
+	}
 	health, err := client.Health(authed, request)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if health.GetState() != extensionsv1.HealthState_HEALTH_STATE_READY {
 		t.Fatalf("health: %+v", health)
+	}
+}
+
+func TestStartupFailureIsRedacted(t *testing.T) {
+	binary := os.Getenv("GOTTH_PROVIDER_BINARY")
+	if binary == "" {
+		t.Skip("GOTTH_PROVIDER_BINARY is required for process integration")
+	}
+	marker := "must-not-escape-runtime-secret"
+	cmd := exec.Command(binary)
+	cmd.Env = []string{
+		"GOTTH_EXTENSION_CONFIG_FILE=/missing/" + marker,
+		"GOTTH_EXTENSION_BINDING_FILE=/missing/binding",
+		"GOTTH_EXTENSION_SECRET_DIR=/missing/secrets",
+		"GOTTH_EXTENSION_SERVICE_TOKEN_FILE=/missing/token",
+		"GOTTH_EXTENSION_SOCKET=/missing/provider.sock",
+	}
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("invalid runtime unexpectedly started")
+	}
+	if strings.Contains(string(output), marker) || string(output) != "gotth-extension-godaddy-dns: startup failed\n" {
+		t.Fatalf("startup failure was not fixed and redacted: %q", output)
 	}
 }

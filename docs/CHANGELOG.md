@@ -1,6 +1,20 @@
 # Changelog
 
-## Unreleased
+## v1.0.0 — 2026-10-23
+
+- Fixed the production runtime, manifest, archive, and release documentation to
+  version `1.0.0`; prerelease versions are no longer accepted by the runtime
+  or artifact builder.
+- Added fake-GoDaddy create fixtures for A, AAAA, CAA, CNAME, MX, TXT, and SRV,
+  post-application duplicate rejection, explicit rollback-material assertions,
+  pagination inconsistency checks, TLS failure classification, duplicate local
+  authentication rejection, and redacted compiled-process startup failure.
+- Added an exact linked-module inventory, pinned upstream license and notice
+  verification, a combined distribution license, embedded Git build identity,
+  and a deterministic SPDX 2.3 sidecar bound to the archive checksum.
+- Added release, verification, upgrade, rollback, sole-writer, and deferred-scope
+  documentation. No tag, hosted release, credential, live provider call, DNS
+  mutation, or deployment was performed.
 
 ### 2026-10-23 — Adopt published Extensions V1 foundation and SDK
 

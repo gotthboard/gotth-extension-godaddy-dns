@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Exact official GoDaddy OpenAPI snapshot; SHA-256 is verified before this scan"
+paths = ['''^contracts/godaddy-domains-v3-2026-10-23.json$''']

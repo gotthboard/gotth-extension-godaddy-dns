@@ -13,6 +13,7 @@ Contracts:
 - [implementation specification](implementation-spec.md)
 
 Exact source, artifact, verification, limits, and cold review records are under
-`evidence/` and `review/`. This completes the source child only. The parent
-release line remains blocked on public mirroring, immutable publication, live
-credentials, live-zone acceptance, and propagation proof.
+`evidence/` and `review/`. This completes the source child only. The production parent remains gated on
+an immutable commit and separately authorized Forgejo tag/publication. GitHub
+mirroring is a separate handoff, not a Forgejo release blocker. Live credentials,
+DNS mutation, deployment, and propagation proof remain separate operations.

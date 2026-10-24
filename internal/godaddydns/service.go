@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"sync"
+	"time"
 
 	dnsv1 "github.com/gotthboard/gotth-extension-godaddy-dns/proto/gotth/dns/provider/v1"
 	extensionsv1 "github.com/gotthboard/gotth-sdk/gen/go/gotth/extensions/v1"
@@ -25,6 +26,8 @@ type Service struct {
 	client     *providerClient
 	mutationMu sync.Mutex
 }
+
+const reconciliationHandoffBudget = 50 * time.Millisecond
 
 func NewService(runtime RuntimeConfig) (*Service, error) {
 	if runtime.ServiceToken == "" || len(runtime.PAT) < 16 || !validVersion(runtime.Version) {
@@ -119,7 +122,12 @@ func (s *Service) CreateRecord(ctx context.Context, in *dnsv1.CreateRecordReques
 	if in.GetExpectedLogicalCount() > maxRecords || logicalCount(before, desired) != int(in.GetExpectedLogicalCount()) {
 		return nil, status.Error(codes.FailedPrecondition, "logical record multiplicity changed")
 	}
-	provider := s.client.mutate(ctx, http.MethodPost, in.GetZone(), "", in.GetOperationId(), &desired)
+	mutationCtx, cancel, err := s.mutationContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	provider := s.client.mutate(mutationCtx, http.MethodPost, in.GetZone(), "", in.GetOperationId(), &desired)
+	cancel()
 	after, observeErr := s.client.observe(ctx, in.GetZone(), in.GetCorrelationId())
 	return classifyCreate(before, after, desired, provider, observeErr), nil
 }
@@ -151,7 +159,12 @@ func (s *Service) ReplaceRecord(ctx context.Context, in *dnsv1.ReplaceRecordRequ
 	if bytes.Equal(canonicalRecordBytes(previous, false), canonicalRecordBytes(desired, false)) {
 		return nil, status.Error(codes.InvalidArgument, "replacement must change record")
 	}
-	provider := s.client.mutate(ctx, http.MethodPut, in.GetZone(), in.GetRecordId(), in.GetOperationId(), &desired)
+	mutationCtx, cancel, err := s.mutationContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	provider := s.client.mutate(mutationCtx, http.MethodPut, in.GetZone(), in.GetRecordId(), in.GetOperationId(), &desired)
+	cancel()
 	after, observeErr := s.client.observe(ctx, in.GetZone(), in.GetCorrelationId())
 	return classifyReplace(before, after, previous, desired, provider, observeErr), nil
 }
@@ -176,7 +189,12 @@ func (s *Service) DeleteRecord(ctx context.Context, in *dnsv1.DeleteRecordReques
 	if !ok || recordDigest(previous) != in.GetExpectedRecordSha256() || !s.config.AllowsType(previous.Type) {
 		return nil, status.Error(codes.FailedPrecondition, "record precondition changed")
 	}
-	provider := s.client.mutate(ctx, http.MethodDelete, in.GetZone(), in.GetRecordId(), in.GetOperationId(), nil)
+	mutationCtx, cancel, err := s.mutationContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	provider := s.client.mutate(mutationCtx, http.MethodDelete, in.GetZone(), in.GetRecordId(), in.GetOperationId(), nil)
+	cancel()
 	after, observeErr := s.client.observe(ctx, in.GetZone(), in.GetCorrelationId())
 	return classifyDelete(before, after, previous, provider, observeErr), nil
 }
@@ -192,6 +210,24 @@ func (s *Service) authorizeMutation(ctx context.Context, correlationID, operatio
 		return status.Error(codes.PermissionDenied, "zone not allowed")
 	}
 	return nil
+}
+
+func (s *Service) mutationContext(ctx context.Context) (context.Context, context.CancelFunc, error) {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return nil, nil, status.Error(codes.InvalidArgument, "deadline required")
+	}
+	remaining := time.Until(deadline)
+	reserve := s.client.timeout
+	if reserve <= 0 || remaining <= reserve+reconciliationHandoffBudget+10*time.Millisecond {
+		return nil, nil, status.Error(codes.DeadlineExceeded, "insufficient reconciliation budget")
+	}
+	writeDeadline := deadline.Add(-reserve - reconciliationHandoffBudget)
+	if time.Until(writeDeadline) < 10*time.Millisecond {
+		return nil, nil, status.Error(codes.DeadlineExceeded, "insufficient mutation budget")
+	}
+	mutationCtx, cancel := context.WithDeadline(ctx, writeDeadline)
+	return mutationCtx, cancel, nil
 }
 
 func (s *Service) precondition(ctx context.Context, zone, correlationID, expected string) (snapshot, error) {

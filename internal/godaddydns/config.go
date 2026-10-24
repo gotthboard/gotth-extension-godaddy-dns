@@ -322,18 +322,9 @@ func validateSocketPath(path string) error {
 	return nil
 }
 
-func validVersion(v string) bool {
-	if v == "dev" || v == "1.0.0" {
-		return true
-	}
-	for _, p := range []string{"1.0.0-alpha.", "1.0.0-beta."} {
-		if strings.HasPrefix(v, p) {
-			n := v[len(p):]
-			return n != "" && n[0] != '0' && strings.Trim(n, "0123456789") == ""
-		}
-	}
-	return false
-}
+// Complexity: time O(1), Omega(1), tight Theta(1); auxiliary space O(1),
+// Omega(1), tight Theta(1), because both accepted strings have fixed length.
+func validVersion(v string) bool { return v == "dev" || v == "1.0.0" }
 
 func validToken(v string, min, max int) bool {
 	if len(v) < min || len(v) > max || !utf8.ValidString(v) {

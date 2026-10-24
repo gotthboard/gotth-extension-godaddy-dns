@@ -50,9 +50,14 @@ outcomes. The extension never retries a mutation blindly.
 - `GDDNS-007`: Preserve enough previous record state for the host to authorize
   an honest inverse. Delete rollback recreates logical record state and does
   not pretend GoDaddy record IDs survive deletion.
-- `GDDNS-008`: Publish deterministic Linux/amd64 artifacts containing the
-  executable, canonical manifest, configuration metadata, license, and
-  checksums with exact source/version identity.
+- `GDDNS-008`: Produce deterministic v1.0.0 Linux/amd64 release files: the
+  runtime archive containing the executable, canonical manifest, configuration
+  metadata, project and linked-dependency license text, and checksums; plus an
+  SPDX 2.3 sidecar binding the archive, exact linked dependencies, licenses,
+  embedded Git source identity, and version; plus deterministic provenance and
+  portable outer checksums binding the clean commit/tree, exact toolchain and
+  `GOEXPERIMENT`, build parameters, archive, and SBOM. Publication remains a
+  separate authorized action.
 - `GDDNS-009`: Pass foundation negotiation, authenticated process integration,
   fake-GoDaddy outcome matrices, race/repeat/shuffle, artifact reproducibility,
   source-boundary review, and two cold admission passes.
@@ -82,7 +87,9 @@ outcomes. The extension never retries a mutation blindly.
 ## Acceptance
 
 All request validation, exact record canonicalization, pagination, API status,
-timeout, cancellation, ambiguous write, reconciliation, inverse material,
-secret redaction, transport authentication, and artifact behavior has tests.
+timeout, cancellation, ambiguous write, reconciliation, post-application
+duplicate suppression through exact-before rejection, inverse material, secret
+redaction, transport authentication, linked-dependency licensing, SBOM, and
+artifact behavior have tests.
 No live zone, credential, tag, release, or deployment is used as a test
 fixture.

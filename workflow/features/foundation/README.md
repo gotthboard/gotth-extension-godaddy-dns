@@ -12,9 +12,10 @@ not part of this completed source feature.
 The bounded SRV mutation child is admitted at
 `c1f3525753da982a3ba84a5f443ae8e35dadebc8`, with a deterministic
 `1.0.0-alpha.2` candidate artifact. This supersedes the earlier candidate for
-Stack composition but does not remove the release-line blockers below.
+Stack composition.
 
-State: `blocked`. Forgejo branch `workflow/feature/foundation` contains the
-exact candidate. Public GitHub repository creation/mirroring, immutable tag and
-artifact publication, and deployed live-zone acceptance remain unavailable;
-the repository therefore does not claim a completed release line.
+State: `blocked` pending the production-v1 release child's immutable commit
+and separately authorized Forgejo tag/publication. Forgejo branch
+`workflow/feature/foundation` contains the exact foundation candidate. GitHub
+mirroring is Bryce's separate handoff and is not a Forgejo release gate. Live
+credentials, DNS mutation, and deployment remain separate operational work.

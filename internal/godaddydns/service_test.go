@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -120,20 +121,20 @@ func TestServiceRejectsConfiguredOutSRVBeforeHTTP(t *testing.T) {
 }
 
 func TestManifestIsBounded(t *testing.T) {
-	m, err := Manifest("1.0.0-alpha.1")
+	m, err := Manifest("1.0.0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if m.ID != ExtensionID || len(m.Interfaces) != 1 || len(m.Secrets) != 1 || len(m.Capabilities) != len(capabilities) {
 		t.Fatalf("unexpected manifest: %+v", m)
 	}
-	if _, err := Manifest("1.0.0-alpha.0"); err == nil {
+	if _, err := Manifest("1.0.0-alpha.2"); err == nil {
 		t.Fatal("invalid version accepted")
 	}
 }
 
 func TestFoundationNegotiation(t *testing.T) {
-	manifest, err := Manifest("1.0.0-alpha.1")
+	manifest, err := Manifest("1.0.0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -335,5 +336,147 @@ func TestLostMutationResponseReconcilesApplied(t *testing.T) {
 	}
 	if response.GetOutcome() != dnsv1.MutationOutcome_MUTATION_OUTCOME_APPLIED || response.GetReason() != dnsv1.MutationReason_MUTATION_REASON_RECONCILED || response.GetAffectedRecordId() != "created-after-loss" {
 		t.Fatalf("lost response was not reconciled: %+v", response)
+	}
+}
+
+func TestMutationDeadlineExhaustionRetainsReconciliationBudget(t *testing.T) {
+	var mu sync.Mutex
+	var mutationDeadlineExpired atomic.Bool
+	var gets atomic.Int32
+	records := []apiRecord{{RecordID: "existing", Name: "@", Type: "A", Data: "192.0.2.1", TTL: 600}}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if r.Method == http.MethodGet {
+			if gets.Add(1) == 4 {
+				time.Sleep(350 * time.Millisecond)
+			}
+			writePage(t, w, append([]apiRecord(nil), records...), len(records), 1)
+			return
+		}
+		var got apiRecord
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("decode create: %v", err)
+			return
+		}
+		got.RecordID = "created-after-deadline"
+		records = append(records, got)
+		<-r.Context().Done()
+		mutationDeadlineExpired.Store(true)
+	}))
+	defer server.Close()
+	client := testClient(server)
+	client.timeout = 400 * time.Millisecond
+	client.http.Timeout = time.Second
+	s := baseService(client, "dns.records.create")
+	before := snap(t, records...)
+	ctx, cancel := context.WithTimeout(context.Background(), 800*time.Millisecond)
+	defer cancel()
+	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("x-gotth-service-token", testToken))
+	response, err := s.CreateRecord(ctx, &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, ExpectedLogicalCount: 0, Desired: &dnsv1.Record{Name: "mail", Type: dnsv1.RecordType_RECORD_TYPE_A, Data: "192.0.2.2", Ttl: 600}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !mutationDeadlineExpired.Load() || gets.Load() != 4 || response.GetOutcome() != dnsv1.MutationOutcome_MUTATION_OUTCOME_APPLIED || response.GetReason() != dnsv1.MutationReason_MUTATION_REASON_RECONCILED || response.GetAffectedRecordId() != "created-after-deadline" {
+		t.Fatalf("deadline-exhausted mutation was not reconciled: expired=%v gets=%d response=%+v", mutationDeadlineExpired.Load(), gets.Load(), response)
+	}
+}
+
+func TestMutableRecordFixturesAgainstFakeProvider(t *testing.T) {
+	fixtures := []struct {
+		name    string
+		desired *dnsv1.Record
+	}{
+		{"A", &dnsv1.Record{Name: "mail", Type: dnsv1.RecordType_RECORD_TYPE_A, Data: "192.0.2.10", Ttl: 600}},
+		{"AAAA", &dnsv1.Record{Name: "mail", Type: dnsv1.RecordType_RECORD_TYPE_AAAA, Data: "2001:db8::10", Ttl: 600}},
+		{"CAA", &dnsv1.Record{Name: "@", Type: dnsv1.RecordType_RECORD_TYPE_CAA, Data: "letsencrypt.org", Ttl: 600, Flag: u32(0), Tag: "issue"}},
+		{"CNAME", &dnsv1.Record{Name: "autoconfig", Type: dnsv1.RecordType_RECORD_TYPE_CNAME, Data: "mail.example.com.", Ttl: 600}},
+		{"MX", &dnsv1.Record{Name: "@", Type: dnsv1.RecordType_RECORD_TYPE_MX, Data: "mail.example.com.", Ttl: 600, Priority: u32(10)}},
+		{"TXT", &dnsv1.Record{Name: "_dmarc", Type: dnsv1.RecordType_RECORD_TYPE_TXT, Data: "v=DMARC1; p=reject", Ttl: 600}},
+		{"SRV", &dnsv1.Record{Name: "_submission._tcp", Type: dnsv1.RecordType_RECORD_TYPE_SRV, Data: "mail.example.com.", Ttl: 600, Priority: u32(10), Weight: u32(20), Port: u32(587), Service: "_submission", Protocol: "_tcp"}},
+	}
+	for _, fixture := range fixtures {
+		t.Run(fixture.name, func(t *testing.T) {
+			var mu sync.Mutex
+			var posted apiRecord
+			posts := 0
+			records := []apiRecord{{RecordID: "keep", Name: "@", Type: "NS", Data: "ns1.example.com.", TTL: 3600}}
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				defer mu.Unlock()
+				switch r.Method {
+				case http.MethodGet:
+					writePage(t, w, append([]apiRecord(nil), records...), len(records), 1)
+				case http.MethodPost:
+					posts++
+					if r.URL.Path != "/v3/domains/zones/example.com/dns-records" || r.Header.Get("X-Request-Id") != "22222222-2222-2222-2222-222222222222" || r.Header.Get("Content-Type") != "application/json" {
+						t.Errorf("unexpected mutation request: %s headers=%v", r.URL.Path, r.Header)
+					}
+					if err := json.NewDecoder(r.Body).Decode(&posted); err != nil {
+						t.Errorf("decode %s fixture: %v", fixture.name, err)
+					}
+					posted.RecordID = "created-" + fixture.name
+					records = append(records, posted)
+					w.Header().Set("Content-Type", "application/json; charset=utf-8")
+					w.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(w).Encode(posted)
+				default:
+					t.Errorf("unexpected method %s", r.Method)
+					w.WriteHeader(http.StatusMethodNotAllowed)
+				}
+			}))
+			defer server.Close()
+			s := baseService(testClient(server), "dns.records.create")
+			s.config.RecordTypes = []string{"A", "AAAA", "CAA", "CNAME", "MX", "SRV", "TXT"}
+			before := snap(t, records...)
+			ctx, cancel := authContext()
+			defer cancel()
+			request := &dnsv1.CreateRecordRequest{CorrelationId: "11111111-1111-1111-1111-111111111111", OperationId: "22222222-2222-2222-2222-222222222222", Zone: "example.com", ExpectedSnapshotSha256: before.Digest, ExpectedLogicalCount: 0, Desired: fixture.desired}
+			response, err := s.CreateRecord(ctx, request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := recordFromProto(fixture.desired, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := recordFromProto(response.GetResultingRecord(), true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if response.GetOutcome() != dnsv1.MutationOutcome_MUTATION_OUTCOME_APPLIED || response.GetReason() != dnsv1.MutationReason_MUTATION_REASON_RECONCILED || response.GetAffectedRecordId() != "created-"+fixture.name || recordDigest(got) != recordDigest(want) || posts != 1 {
+				t.Fatalf("%s fixture result=%+v posted=%+v posts=%d", fixture.name, response, posted, posts)
+			}
+			if _, err := s.CreateRecord(ctx, request); status.Code(err) != codes.FailedPrecondition {
+				t.Fatalf("duplicate %s operation was not rejected as stale: %v", fixture.name, err)
+			}
+			if posts != 1 {
+				t.Fatalf("duplicate %s operation caused another provider mutation", fixture.name)
+			}
+		})
+	}
+}
+
+func TestRollbackMaterialSemantics(t *testing.T) {
+	keep := apiRecord{RecordID: "keep", Name: "txt", Type: "TXT", Data: "keep", TTL: 600}
+	previous := apiRecord{RecordID: "target", Name: "mail", Type: "A", Data: "192.0.2.1", TTL: 600}
+	desired := apiRecord{Name: "mail", Type: "A", Data: "192.0.2.2", TTL: 600}
+	resulting := desired
+	resulting.RecordID = previous.RecordID
+	before := snap(t, keep, previous)
+
+	created := desired
+	created.RecordID = "created"
+	create := classifyCreate(before, snap(t, keep, previous, created), desired, providerAccepted, nil)
+	if create.GetResultingRecord().GetRecordId() != "created" || create.GetPreviousRecord() != nil {
+		t.Fatalf("create inverse must delete the observed provider ID: %+v", create)
+	}
+	replace := classifyReplace(before, snap(t, keep, resulting), previous, desired, providerAccepted, nil)
+	if replace.GetPreviousRecord().GetRecordId() != "target" || replace.GetResultingRecord().GetRecordId() != "target" {
+		t.Fatalf("replace inverse must preserve exact prior state and provider ID: %+v", replace)
+	}
+	deleted := classifyDelete(before, snap(t, keep), previous, providerAccepted, nil)
+	if deleted.GetPreviousRecord().GetRecordId() != "target" || deleted.GetResultingRecord() != nil {
+		t.Fatalf("delete inverse must return prior logical state without claiming ID preservation: %+v", deleted)
 	}
 }

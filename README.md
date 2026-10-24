@@ -10,10 +10,12 @@ credential storage, supervision, and authoritative-DNS propagation checks.
 The extension owns only strict request validation, GoDaddy API translation,
 bounded observation, and mutation outcome reconciliation.
 
-This repository is unreleased. See `docs/prd.md`, `docs/architecture.md`, and
-`docs/implementation-spec.md`.
+This repository defines the bounded v1.0.0 source and release contract. See
+`docs/prd.md`, `docs/architecture.md`, `docs/implementation-spec.md`, and
+`docs/release.md`. A source or release build does not itself authorize live
+credential use, DNS mutation, or deployment.
 
-The current adoption candidate retains the foundation manifest, grant, session,
+The v1.0.0 release retains the foundation manifest, grant, session,
 and canonicalization API from `github.com/gotthboard/gotth-extensions/pkg/extensions`
 at published `v1.0.0`. Extension control messages and gRPC registration now come
 from published `github.com/gotthboard/gotth-sdk/gen/go/gotth/extensions/v1` at
@@ -22,8 +24,9 @@ Both modules are selected without a `replace` directive. The provider-owned
 `gotth.dns.provider.v1` interface remains local because it is not part of the
 published foundation SDK.
 
-This is an untagged, unpublished candidate ready for checkpoint commit. It
-includes the linear foundation and SRV histories, but the default Forgejo
-foundation branch has not been moved. Push or default-branch movement is outside
-this task; tag, release, credentials, live provider access, live DNS, and
-deployment require separate authorization.
+The production release fixes the runtime and artifact version to `1.0.0`,
+adds deterministic SPDX 2.3 release metadata and linked dependency license
+coverage, and binds fake-provider fixtures for every mutable record shape. The
+archive embeds Git build identity and remains reproducible. Commit, tag, Forgejo publication, credential use, live provider access, DNS
+mutation, and deployment are explicit operator actions rather than build side
+effects.

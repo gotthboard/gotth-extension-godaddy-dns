@@ -1,10 +1,64 @@
 package godaddydns
 
 import (
+	"reflect"
+	"strings"
 	"testing"
 )
 
 func u32(v uint32) *uint32 { return &v }
+
+func TestCAATagCanonicalizationUsesRFCGrammar(t *testing.T) {
+	for _, tag := range []string{"ISSUE", "AccountURI", "x7"} {
+		record := apiRecord{RecordID: "caa-" + tag, Name: "@", Type: "CAA", Data: "ca.example", TTL: 600, Flag: u32(0), Tag: tag}
+		got, err := canonicalRecord(record, true)
+		if err != nil {
+			t.Fatalf("valid CAA tag %q rejected: %v", tag, err)
+		}
+		if got.Tag != strings.ToLower(tag) {
+			t.Fatalf("CAA tag %q canonicalized as %q", tag, got.Tag)
+		}
+	}
+	for _, tag := range []string{"", "bad-tag", "issue!", strings.Repeat("a", 256)} {
+		record := apiRecord{RecordID: "caa", Name: "@", Type: "CAA", Data: "ca.example", TTL: 600, Flag: u32(0), Tag: tag}
+		if _, err := canonicalRecord(record, true); err == nil {
+			t.Fatalf("invalid CAA tag %q accepted", tag)
+		}
+	}
+}
+
+func TestCAAReservedFlagsAreObservationOnly(t *testing.T) {
+	observed := apiRecord{RecordID: "caa", Name: "@", Type: "CAA", Data: "ca.example", TTL: 600, Flag: u32(1), Tag: "issue"}
+	if _, err := canonicalRecord(observed, true); err != nil {
+		t.Fatalf("future observed CAA flags rejected: %v", err)
+	}
+	observed.RecordID = ""
+	if _, err := canonicalRecord(observed, false); err == nil {
+		t.Fatal("reserved CAA publisher flags accepted for mutation")
+	}
+	for _, flag := range []uint32{0, 128} {
+		observed.Flag = u32(flag)
+		if _, err := canonicalRecord(observed, false); err != nil {
+			t.Fatalf("CAA publisher flag %d rejected: %v", flag, err)
+		}
+	}
+}
+
+func TestSnapshotSortsTypedCanonicalTuple(t *testing.T) {
+	priority2 := apiRecord{RecordID: "mx-2", Name: "@", Type: "MX", Data: "mail.example.com.", TTL: 600, Priority: u32(2)}
+	priority10 := apiRecord{RecordID: "mx-10", Name: "@", Type: "MX", Data: "mail.example.com.", TTL: 600, Priority: u32(10)}
+	quote := apiRecord{RecordID: "txt-quote", Name: "txt", Type: "TXT", Data: "\"", TTL: 600}
+	letter := apiRecord{RecordID: "txt-letter", Name: "txt", Type: "TXT", Data: "A", TTL: 600}
+	snapshot, err := buildSnapshot("example.com", []apiRecord{letter, priority10, quote, priority2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{snapshot.Records[0].RecordID, snapshot.Records[1].RecordID, snapshot.Records[2].RecordID, snapshot.Records[3].RecordID}
+	want := []string{"mx-2", "mx-10", "txt-quote", "txt-letter"}
+	if !reflect.DeepEqual(ids, want) {
+		t.Fatalf("typed tuple order=%v want=%v", ids, want)
+	}
+}
 
 func TestCanonicalRecordTypes(t *testing.T) {
 	t.Parallel()

@@ -1,4 +1,4 @@
-.PHONY: test race vet build format binding process artifact verify
+.PHONY: test race vet build format binding licenses source process artifact verify
 
 test:
 	go test -count=1 ./...
@@ -18,6 +18,12 @@ format:
 binding:
 	./scripts/check-published-control.sh
 
+licenses:
+	./scripts/check-dependency-licenses.sh
+
+source:
+	./scripts/check-source-boundary.sh
+
 process:
 	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT HUP INT TERM; \
 	go build -o "$$tmp/gotth-extension-godaddy-dns" ./cmd/gotth-extension-godaddy-dns; \
@@ -26,5 +32,5 @@ process:
 artifact:
 	./scripts/test-reproducible-artifact.sh
 
-verify: test race vet build format binding process artifact
+verify: test race vet build format binding licenses source process artifact
 	git diff --check

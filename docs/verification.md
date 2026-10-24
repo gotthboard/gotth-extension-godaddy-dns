@@ -1,5 +1,29 @@
 # Verification status
 
+## Production v1.0.0 preparation — 2026-10-23
+
+The initial source-preparation run was based on
+`c860b030fd7ff8297a244c1da1f7d57844bcde5e` before a release commit or tag.
+Local focused gates passed. The remediated source then passed isolated
+development full tests, ten focused fake-GoDaddy repetitions, full race, 20
+repeats, 20 shuffled race repeats, three 10-second fuzz targets, 78.7% statement
+coverage, vet, build, compiled-process integration, published dependency and
+control binding, linked-license and retained-contract verification,
+deterministic archive/SPDX/provenance/checksum reproduction, `govulncheck`,
+scoped `gitleaks`, format, and temporary-index diff checks including untracked
+files. A final affected rerun repeated full, focused, race, provider-JSON fuzz,
+coverage, release-set, secret, format, and diff gates.
+
+The exact raw logs and candidate seal are under
+`.artifacts/gotth-extension-godaddy-v1-release-20261023`. The deterministic
+candidate archive, SPDX, provenance, and checksum set retained there are
+verification evidence only: because commit authority is excluded, their
+embedded build information
+honestly reports `vcs.modified=true`. A publishable v1.0.0 release artifact
+remains blocked on an authorized commit of the sealed tree followed by the
+clean-source build gate; tag, hosted release, live credentials, DNS changes, and
+deployment remain separately blocked.
+
 ## Published Extensions V1 adoption candidate — 2026-10-23
 
 The candidate selects exact published `gotth-extensions v1.0.0` and
@@ -22,8 +46,9 @@ artifact reproducibility, `govulncheck`, `gitleaks`, format, and diff checks.
 Logs, the final binary patch, candidate tree identity, source checksums, and
 verification summary are recorded under the parent workspace artifact
 `.artifacts/gotth-extension-godaddy-v1-adoption2-20261023`. No live provider,
-credential, or DNS state was used. The candidate is ready for checkpoint commit.
-Push and default-branch movement remain outside this task; tag, release, live
+credential, or DNS state was used. The adoption was checkpointed at
+`c860b030fd7ff8297a244c1da1f7d57844bcde5e` on its dedicated branch. Default-
+branch movement remains outside that adoption; tag, release, live
 provider access, DNS changes, and deployment require separate authorization.
 
 ## SRV mutation candidate — 2026-09-20
@@ -46,8 +71,8 @@ deployment, and live-zone acceptance remain separate work.
 
 The private Forgejo repository exists and branch
 `workflow/feature/foundation` resolves exactly to the admitted source commit.
-The corresponding GitHub API lookup returns 404, so cross-forge parity, tag,
-and release publication are explicitly blocked rather than fabricated.
+The v1.0.0 publication boundary is Forgejo-only. GitHub mirroring is Bryce's
+separate handoff and does not block Forgejo tag or release publication.
 
 The exact clean commit passed:
 

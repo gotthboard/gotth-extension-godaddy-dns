@@ -1,6 +1,6 @@
 schema_version = 1
 profile = "strict"
-active_feature = "foundation.extensions-v1-adoption"
+active_feature = "foundation.v1-release"
 
 [[root_features]]
 id = "foundation"
@@ -13,7 +13,7 @@ path = "workflow/features/foundation"
 source_path = "."
 branch = "workflow/feature/foundation"
 worktree = "/tank/development/linus/gotth-extension-godaddy-dns"
-dependencies = ["gotth-extensions@3822dd722bc8606b8843d0a68c7c3e9f598d9ccc"]
+dependencies = ["gotth-extensions@v1.0.0", "gotth-sdk@v1.0.0"]
 required_verification = ["git diff --check", "go test ./...", "go test -race ./...", "go vet ./...", "go build ./...", "fake GoDaddy conformance", "reproducible artifact", "two cold reviews"]
 
 [[features]]
@@ -31,9 +31,20 @@ required_verification = ["official v3 SRV schema", "strict SRV canonicalization"
 id = "foundation.extensions-v1-adoption"
 root = "foundation"
 title = "Adopt published Extensions V1 foundation and SDK"
-state = "blocked"
+state = "done"
 path = "workflow/features/foundation/extensions-v1-adoption"
 source_path = "."
 branch = "workflow/feature/extensions-v1-adoption"
 dependencies = ["foundation.srv-mutation@8529e8d13dcd7634c6810b1b937fb652564283a4", "gotth-extensions@v1.0.0", "gotth-sdk@v1.0.0"]
 required_verification = ["git diff --check", "gofmt clean", "exact published modules without replace", "published control source and descriptor binding", "no repository-local control copy", "fake GoDaddy conformance", "compiled process", "race repeat shuffle fuzz", "reproducible artifact", "govulncheck", "gitleaks", "default-branch reconciliation or exact blocker"]
+
+[[features]]
+id = "foundation.v1-release"
+root = "foundation"
+title = "Prepare the bounded production v1.0.0 release set"
+state = "blocked"
+path = "workflow/features/foundation/v1-release"
+source_path = "."
+branch = "workflow/feature/v1-release"
+dependencies = ["foundation.extensions-v1-adoption@c860b030fd7ff8297a244c1da1f7d57844bcde5e", "gotth-extensions@v1.0.0", "gotth-sdk@v1.0.0"]
+required_verification = ["exact v1.0.0 version and published dependency boundary", "A AAAA CAA CNAME MX TXT SRV fake-provider fixtures", "pagination classification lost-mutation duplicate suppression rollback", "compiled process transport and authentication failures", "linked dependency licenses, deterministic SPDX 2.3 SBOM, provenance, and portable checksums", "full race repeat shuffle fuzz and process suites on development", "reproducible archive, SBOM, provenance, and checksums", "govulncheck", "gitleaks", "sealed patch tree and evidence", "two cold reviews", "immutable commit tag release or exact blocker"]

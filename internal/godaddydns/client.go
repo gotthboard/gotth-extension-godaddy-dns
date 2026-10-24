@@ -71,11 +71,13 @@ func (c *providerClient) close() {
 }
 
 func (c *providerClient) observe(ctx context.Context, zone, correlationID string) (snapshot, error) {
-	left, err := c.walk(ctx, zone, correlationID)
+	observationCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	left, err := c.walk(observationCtx, zone, correlationID)
 	if err != nil {
 		return snapshot{}, err
 	}
-	right, err := c.walk(ctx, zone, correlationID)
+	right, err := c.walk(observationCtx, zone, correlationID)
 	if err != nil {
 		return snapshot{}, err
 	}
@@ -97,10 +99,14 @@ func (c *providerClient) walk(ctx context.Context, zone, correlationID string) (
 		}
 		resp, err := c.http.Do(req)
 		if err != nil {
+			if resp != nil && resp.Body != nil {
+				resp.Body.Close()
+			}
 			return snapshot{}, errors.New("provider observation unavailable")
 		}
 		if resp.StatusCode != http.StatusOK || !jsonContentType(resp.Header.Get("Content-Type")) {
 			discard(resp.Body)
+			resp.Body.Close()
 			return snapshot{}, errors.New("provider observation rejected")
 		}
 		body, err := readBounded(resp.Body, remaining)
@@ -113,7 +119,19 @@ func (c *providerClient) walk(ctx context.Context, zone, correlationID string) (
 		if err := strictDecode(body, &out); err != nil {
 			return snapshot{}, errors.New("invalid provider observation")
 		}
-		if len(out.Links) < 1 || len(out.Links) > 16 || len(out.Items) > pageSize {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(body, &fields); err != nil {
+			return snapshot{}, errors.New("invalid provider observation")
+		}
+		totalItemsJSON, hasTotalItems := fields["totalItems"]
+		totalPagesJSON, hasTotalPages := fields["totalPages"]
+		if (hasTotalItems && bytes.Equal(totalItemsJSON, []byte("null"))) || (hasTotalPages && bytes.Equal(totalPagesJSON, []byte("null"))) {
+			return snapshot{}, errors.New("null provider totals forbidden")
+		}
+		if out.Items == nil || out.Links == nil {
+			return snapshot{}, errors.New("provider arrays required")
+		}
+		if len(out.Links) > 16 || len(out.Items) > pageSize {
 			return snapshot{}, errors.New("invalid provider links")
 		}
 		for _, link := range out.Links {
@@ -121,7 +139,13 @@ func (c *providerClient) walk(ctx context.Context, zone, correlationID string) (
 				return snapshot{}, errors.New("invalid provider links")
 			}
 		}
-		if out.TotalItems == nil || out.TotalPages == nil || *out.TotalItems < 0 || *out.TotalItems > maxRecords || *out.TotalPages < 1 || *out.TotalPages > maxPages {
+		if !hasTotalItems && !hasTotalPages && len(out.Items) == 0 {
+			if page != 1 || len(out.Links) != 0 {
+				return snapshot{}, errors.New("invalid empty provider page")
+			}
+			return buildSnapshot(zone, nil)
+		}
+		if len(out.Links) < 1 || !hasTotalItems || !hasTotalPages || out.TotalItems == nil || out.TotalPages == nil || *out.TotalItems < 1 || *out.TotalItems > maxRecords || *out.TotalPages < 1 || *out.TotalPages > maxPages {
 			return snapshot{}, errors.New("invalid provider pagination")
 		}
 		if page == 1 {
@@ -172,6 +196,9 @@ func (c *providerClient) mutate(ctx context.Context, method, zone, recordID, cor
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
 		return providerUnavailable
 	}
 	defer resp.Body.Close()

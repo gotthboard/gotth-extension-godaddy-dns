@@ -88,12 +88,21 @@ exact zone, and the sorted records.
 Record digest excludes record ID for logical equality; provider identity is a
 separate bounded field. Duplicate logical records remain distinct by record ID.
 
-Names use `@` for apex or lowercase relative labels; a wildcard is admitted
-only as the complete leftmost label. CNAME/MX targets are
+CAA property tags follow RFC 8659: one through 255 ASCII alphanumeric
+characters. Matching is case-insensitive and canonical state stores lowercase;
+valid extension tags beyond `issue`, `issuewild`, and `iodef` remain observable
+and mutable. Observations preserve any 0–255 flag byte for forward compatibility;
+mutations admit only 0 or the issuer-critical bit 128 and reject reserved bits. Names use `@` for apex or lowercase relative labels; a wildcard is
+admitted only as the complete leftmost label. CNAME/MX targets are
 lowercase absolute names with one trailing dot. TXT data remains exact UTF-8
 after control/NUL and size rejection. IP addresses use canonical textual form.
 
 ## HTTP client
+
+With `totalRequired=true`, non-empty responses require consistent positive
+`totalItems` and `totalPages`. The official empty response shape omits both
+totals and carries empty `items` and `links`; it is admitted as a completed
+zero-record walk.
 
 The production base URL is compiled, not configured. The client disables
 redirects, compression, and ambient proxies; bounds response headers,
@@ -124,8 +133,11 @@ failures never include remote text.
 - `unknown`: every other state, including unrelated concurrent change.
 
 An HTTP success with an unexpected after snapshot is `unknown`. An HTTP error
-with the exact postcondition may still be `applied`. Mutation RPC handlers do
-not retry. The HTTP API has no conditional-write primitive; this algorithm
+with the exact postcondition may still be `applied`. The client applies the configured timeout end to end across both complete
+walks, not independently to each page. The write runs under a shorter child
+deadline that reserves that full observation timeout plus an explicit 50 ms
+handoff margin. Insufficient remaining time rejects before mutation. Mutation RPC
+handlers do not retry. The HTTP API has no conditional-write primitive; this algorithm
 does not claim atomic compare-and-swap. Runtime admission requires the Stack
 controller path to be the sole external writer during each zone mutation. The
 service also serializes its complete precondition/write/reconciliation
@@ -147,9 +159,17 @@ provider-owned DNS seam and are not deleted by this adoption.
 ## Artifact and source boundary
 
 The deterministic archive is
-`gotth-extension-godaddy-dns-<version>-linux-amd64.tar.gz` and contains only
+`gotth-extension-godaddy-dns-1.0.0-linux-amd64.tar.gz` and contains only
 the static executable, `manifest.json`, `configuration-metadata.json`,
-`LICENSE`, and `SHA256SUMS`.
+`LICENSE`, and `SHA256SUMS`. `LICENSE` combines the project license with the
+license and notice text required by the exact linked dependency inventory. A deterministic SPDX 2.3 sidecar binds the archive checksum, embedded Git
+source identity, exact linked modules, module sums, and declared licenses. A
+deterministic provenance sidecar binds archive and SBOM hashes to the clean
+commit/tree, `v1.0.0`, exact Go executable identity and `GOEXPERIMENT`, target,
+build flags, and source epoch. A basename-only outer `SHA256SUMS` covers all
+three release objects without changing the runtime archive contents. Publication
+requires a clean source tree and `vcs.modified=false` in the binary build
+information and provenance.
 
 Production source may use only fixed `net/http` requests from the provider
 client. It may not import plugin machinery, execute subprocesses, invoke a

@@ -1,0 +1,9 @@
+# module	version	go_sum	license_id	license_sha256	notice_sha256
+github.com/gotthboard/gotth-extensions	v1.0.0	h1:lKXOydN/7+Mq9W2juqnWUXNJiirpYR6F3KPXYV55Hho=	MIT	5d3e572b01d8ed617e25ece3838c73f277e3c9da35ec0b680d1871e9d6cf62f8	-
+github.com/gotthboard/gotth-sdk	v1.0.0	h1:RmjRs/l+H3KMDmnimZs2OL8ExCchT/opVO5tDdjb4EA=	MIT	3188fe92afb9f7e275a82e3447f93732747daea8722f3faf5673aaedef9c7844	-
+golang.org/x/net	v0.60.0	h1:79p50tfZlm0J9YfoDsSi639qSXNGVwEzOPLCxM2FsYU=	BSD-3-Clause	911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad	-
+golang.org/x/sys	v0.48.0	h1:bbX/i/6MgT9BVLM9RT1thmxL04yeTAhbEz4SyadbXoo=	BSD-3-Clause	911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad	-
+golang.org/x/text	v0.42.0	h1:JbOZXgfeCPU9gacVtYliJqOhD+zhrEqK4LfdpmlUZqI=	BSD-3-Clause	911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad	-
+google.golang.org/genproto/googleapis/rpc	v0.0.0-20260526163538-3dc84a4a5aaa	h1:mZHHdPZl0dbGHCflZgAq/Q468DWVFcU2whhB2KAo8fk=	Apache-2.0	cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30	-
+google.golang.org/grpc	v1.83.2	h1:EManeRomTObA0BU7I8vXgg/78uE5MJ9M8B39EX2WscU=	Apache-2.0	cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30	693ff28ec216d5112ac1bbfe64ef539005867d1c7bd427b57d579683293b947f
+google.golang.org/protobuf	v1.36.11	h1:fV6ZwhNocDyBLK0dj+fg8ektcVegBBuEolpbTQyBNVE=	BSD-3-Clause	4835612df0098ca95f8e7d9e3bffcb02358d435dbb38057c844c99d7f725eb20	-

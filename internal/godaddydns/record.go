@@ -78,6 +78,9 @@ func canonicalRecord(in apiRecord, observed bool) (apiRecord, error) {
 		if r.Flag == nil || *r.Flag > 255 || !validCAATag(r.Tag) || r.Priority != nil || r.Service != "" || r.Protocol != "" || r.Weight != nil || r.Port != nil {
 			return apiRecord{}, errors.New("invalid CAA record")
 		}
+		if !observed && *r.Flag != 0 && *r.Flag != 128 {
+			return apiRecord{}, errors.New("invalid mutable CAA flags")
+		}
 		r.Tag = strings.ToLower(r.Tag)
 	case "SRV":
 		if !validService(r.Service) || !validProtocol(r.Protocol) || !validSRVOwner(r.Name, r.Service, r.Protocol) || (r.Data != "." && !validAbsoluteDNSName(r.Data)) || r.Priority == nil || r.Weight == nil || r.Port == nil || *r.Priority > 65535 || *r.Weight > 65535 || *r.Port > 65535 || r.Flag != nil || r.Tag != "" {
@@ -157,8 +160,13 @@ func validOpaqueID(v string) bool {
 	return true
 }
 func validCAATag(v string) bool {
-	if v != "issue" && v != "issuewild" && v != "iodef" {
+	if len(v) < 1 || len(v) > 255 {
 		return false
+	}
+	for _, c := range v {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9') {
+			return false
+		}
 	}
 	return true
 }
@@ -192,23 +200,70 @@ func canonicalRecordBytes(r apiRecord, includeID bool) []byte {
 	return b
 }
 
-func recordSortBytes(r apiRecord) []byte {
-	projection := struct {
-		Type     string  `json:"type"`
-		Name     string  `json:"name"`
-		Data     string  `json:"data"`
-		Priority *uint32 `json:"priority,omitempty"`
-		Service  string  `json:"service,omitempty"`
-		Protocol string  `json:"protocol,omitempty"`
-		Weight   *uint32 `json:"weight,omitempty"`
-		Port     *uint32 `json:"port,omitempty"`
-		Flag     *uint32 `json:"flag,omitempty"`
-		Tag      string  `json:"tag,omitempty"`
-		TTL      uint32  `json:"ttl"`
-		RecordID string  `json:"record_id"`
-	}{r.Type, r.Name, r.Data, r.Priority, r.Service, r.Protocol, r.Weight, r.Port, r.Flag, r.Tag, r.TTL, r.RecordID}
-	b, _ := json.Marshal(projection)
-	return b
+func compareOptionalUint32(a, b *uint32) int {
+	if a == nil {
+		if b == nil {
+			return 0
+		}
+		return -1
+	}
+	if b == nil {
+		return 1
+	}
+	if *a < *b {
+		return -1
+	}
+	if *a > *b {
+		return 1
+	}
+	return 0
+}
+
+func compareString(a, b string) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	return 0
+}
+
+func recordLess(a, b apiRecord) bool {
+	if order := compareString(a.Type, b.Type); order != 0 {
+		return order < 0
+	}
+	if order := compareString(a.Name, b.Name); order != 0 {
+		return order < 0
+	}
+	if order := compareString(a.Data, b.Data); order != 0 {
+		return order < 0
+	}
+	if order := compareOptionalUint32(a.Priority, b.Priority); order != 0 {
+		return order < 0
+	}
+	if order := compareString(a.Service, b.Service); order != 0 {
+		return order < 0
+	}
+	if order := compareString(a.Protocol, b.Protocol); order != 0 {
+		return order < 0
+	}
+	if order := compareOptionalUint32(a.Weight, b.Weight); order != 0 {
+		return order < 0
+	}
+	if order := compareOptionalUint32(a.Port, b.Port); order != 0 {
+		return order < 0
+	}
+	if order := compareOptionalUint32(a.Flag, b.Flag); order != 0 {
+		return order < 0
+	}
+	if a.Tag != b.Tag {
+		return a.Tag < b.Tag
+	}
+	if a.TTL != b.TTL {
+		return a.TTL < b.TTL
+	}
+	return a.RecordID < b.RecordID
 }
 
 func recordDigest(r apiRecord) string {
@@ -231,7 +286,7 @@ func buildSnapshot(zone string, records []apiRecord) (snapshot, error) {
 		canonical[i] = c
 	}
 	sort.Slice(canonical, func(i, j int) bool {
-		return bytes.Compare(recordSortBytes(canonical[i]), recordSortBytes(canonical[j])) < 0
+		return recordLess(canonical[i], canonical[j])
 	})
 	h := sha256.New()
 	_, _ = h.Write([]byte("gotth.dns.snapshot.v1\x00"))

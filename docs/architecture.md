@@ -83,10 +83,16 @@ Each mutation follows:
    `unknown`; and
 5. return only canonical before/after digests and bounded inverse material.
 
-The provider performs no automatic mutation retry. Create reconciliation uses
-the before snapshot plus the exact canonical record multiplicity; it succeeds
-only when one unambiguous new matching record and record ID appear. Replace
-and delete use the exact admitted record ID and previous-record digest.
+The provider performs no automatic mutation retry. The operation ID is a
+bounded audit identifier propagated to GoDaddy, not a claimed provider
+idempotency key and not an in-memory replay cache. A repeated request after an
+applied mutation is rejected by the now-stale exact snapshot before another
+write. If the exact before state is still present, only the host's durable
+journal and explicit retry decision may authorize another call; an `unknown`
+outcome is never safe to retry blindly. Create reconciliation uses the before
+snapshot plus the exact canonical record multiplicity; it succeeds only when
+one unambiguous new matching record and record ID appear. Replace and delete
+use the exact admitted record ID and previous-record digest.
 
 GoDaddy's documented record endpoints provide neither ETags nor conditional
 writes. The expected-before checks are therefore not compare-and-swap. The
@@ -109,10 +115,12 @@ cache expiry and propagation are observed by the later acceptance layer.
 
 ## GoDaddy contract
 
-The implementation contract is pinned to GoDaddy's official Domains v3
-OpenAPI document retrieved from
-`https://developer.godaddy.com/openapi/domains-v3.json` on 2026-09-20. Later
-schema changes require review; they do not silently widen this provider.
+The implementation contract is pinned to the retained official Domains v3
+OpenAPI snapshot `contracts/godaddy-domains-v3-2026-10-23.json`, SHA-256
+`ab53d7bf4194b2ca987cea687634db9c1bc92464f26bf1203db88150bbe43373`,
+retrieved from `https://developer.godaddy.com/openapi/domains-v3.json`. The
+source-boundary gate verifies that digest. Later schema changes require a new
+reviewed snapshot; they do not silently widen this provider.
 
 Production uses only `https://api.godaddy.com`; OTE uses only
 `https://api.ote-godaddy.com`. The API path prefix is fixed to
@@ -135,6 +143,11 @@ requires two identical walks, so it permits at most twenty list requests and
 response bytes; it may maintain the normal connection goroutines required by
 Go's HTTP transport. One mutation costs two admitted observations plus one fixed API request: at most forty list
 requests and one mutation, normally four list requests and one mutation for a
-single-page zone. That cost is visible and intentional because a paginated,
+single-page zone. The client applies one configured end-to-end timeout to both complete walks,
+including up to twenty sequential page requests. The write uses a shorter child
+deadline that reserves that full observation timeout plus an explicit handoff
+margin on the caller context. A request without both budgets is rejected before
+mutation. That cost is visible and
+intentional because a paginated,
 concurrently changing zone cannot honestly produce an exact precondition from
 one walk.
